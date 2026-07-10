@@ -1,0 +1,18 @@
+# Compiled binary
+BatteryMonitor.exe
+
+# Local user configuration
+config.txt
+
+# Windows shortcut links
+ArctisBatteryMonitor.lnk
+*.lnk
+
+# Backup folder
+backup-scripts/
+
+# Editor files
+.vs/
+*.suo
+*.user
+*.log
