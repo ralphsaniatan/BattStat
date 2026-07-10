@@ -2,6 +2,8 @@
 
 A lightweight Windows system tray battery monitor that tracks up to three USB and Bluetooth devices in one tray icon.
 
+![BattStat UI](screenshot.png)
+
 > **Why BattStat?**
 > Manufacturer companion apps (like SteelSeries GG or VGN Hub) are bloated and resource-heavy just to check if wireless devices need charging. BattStat tracks headset, mouse, and Bluetooth batteries in a single, simple tray utility.
 
