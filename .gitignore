@@ -1,10 +1,12 @@
 # Compiled binary
+BattStat.exe
 BatteryMonitor.exe
 
 # Local user configuration
 config.txt
 
 # Windows shortcut links
+BattStat.lnk
 ArctisBatteryMonitor.lnk
 *.lnk
 

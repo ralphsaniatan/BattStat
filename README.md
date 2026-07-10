@@ -7,6 +7,29 @@ A lightweight, premium Windows system tray battery monitor that tracks up to thr
 
 ---
 
+## How to Install & Run 📦
+
+### 1. Download the Application
+- **For Friends / Casual Users (Easiest)**:
+  1. Go to the [Releases](https://github.com/ralphsaniatan/BattStat/releases) section of this repository.
+  2. Download the precompiled **`BattStat.exe`** executable file.
+  3. Move the downloaded `BattStat.exe` to a permanent folder on your PC (e.g., `Documents\BattStat` or `C:\Program Files\BattStat`).
+  4. Double-click the file to launch it! It will immediately run silently in your Windows System Tray (bottom-right).
+
+- **For Developers / From Source**:
+  1. Clone this repository to your machine.
+  2. Double-click and run `build.bat` to compile the source code natively using Windows' bundled C# compiler.
+  3. Launch the generated `BattStat.exe` binary.
+
+### 2. Configure Your Devices
+1. Locate the **BattStat** icon in your system tray (it will appear as three concentric circles representing your device batteries).
+2. Right-click the icon and choose **Settings**.
+3. Select your wireless devices from the dropdown menus (supports SteelSeries headsets, VGN/Compx mice, and any connected Bluetooth LE peripherals).
+4. Check the box **"Run application at Windows Startup"** so it automatically starts when you turn on your PC.
+5. Click **Save & Close**.
+
+---
+
 ## Features 🚀
 
 - **Concentric Tray Activity Rings**: Monitors three devices simultaneously in the system tray using Apple Watch-style rings (Outer, Middle, Inner).

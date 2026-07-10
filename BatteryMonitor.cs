@@ -1330,7 +1330,7 @@ namespace BatteryMonitorApp
             chkStartup.Size = new Size(340, 25);
 
             string startupFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Microsoft\Windows\Start Menu\Programs\Startup");
-            string shortcutPath = Path.Combine(startupFolder, "ArctisBatteryMonitor.lnk");
+            string shortcutPath = Path.Combine(startupFolder, "BattStat.lnk");
             chkStartup.Checked = File.Exists(shortcutPath);
             settingsForm.Controls.Add(chkStartup);
 
@@ -1382,7 +1382,7 @@ namespace BatteryMonitorApp
                         dynamic shortcut = shell.CreateShortcut(shortcutPath);
                         shortcut.TargetPath = currentExe;
                         shortcut.WorkingDirectory = workingDir;
-                        shortcut.Description = "SteelSeries Headset & Mouse Battery Monitor";
+                        shortcut.Description = "Universal Headset, Mouse, and Bluetooth Battery Monitor";
                         shortcut.Save();
                     }
                     catch { }
