@@ -14,8 +14,8 @@ using System.Reflection;
 [assembly: AssemblyCopyright("Copyright © 2026")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.2.1.0")]
+[assembly: AssemblyFileVersion("1.2.1.0")]
 
 namespace BatteryMonitorApp
 {
@@ -1518,7 +1518,7 @@ namespace BatteryMonitorApp
             // Enable double buffering to prevent flickering during hover transitions
             this.DoubleBuffered = true;
 
-            this.Text = "BattStat v1.2.0";
+            this.Text = "BattStat v1.2.1";
             this.Size = new Size(260, 440); // Height increased to 440 to support spacing
             this.FormBorderStyle = FormBorderStyle.None;
             this.BackColor = Color.FromArgb(28, 28, 28); // Dark charcoal background
@@ -1792,7 +1792,7 @@ namespace BatteryMonitorApp
                 using (StringFormat sf = new StringFormat())
                 {
                     sf.Alignment = StringAlignment.Far;
-                    g.DrawString("v1.2.0", fontVersion, verBrush, new RectangleF(150, 16, 90, 20), sf);
+                    g.DrawString("v1.2.1", fontVersion, verBrush, new RectangleF(150, 16, 90, 20), sf);
                 }
             }
 
