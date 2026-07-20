@@ -424,6 +424,7 @@ namespace BatteryMonitorApp
 
         private Form settingsForm = null;
         private FlyoutForm activeFlyout = null;
+        private DateTime lastClosedTime = DateTime.MinValue;
 
         public BatteryMonitorContext()
         {
@@ -1431,14 +1432,27 @@ namespace BatteryMonitorApp
         public void ClearActiveFlyout()
         {
             activeFlyout = null;
+            lastClosedTime = DateTime.Now;
         }
 
         public void ShowFlyoutWindow()
         {
+            // Reset activeFlyout if it was disposed or hidden behind the scenes
+            if (activeFlyout != null && (activeFlyout.IsDisposed || !activeFlyout.Visible))
+            {
+                activeFlyout = null;
+            }
+
             if (activeFlyout != null)
             {
                 activeFlyout.StartCloseAnimation(null);
                 activeFlyout = null;
+                return;
+            }
+
+            // Debounce double-clicks or immediate re-opens from tray click deactivation
+            if ((DateTime.Now - lastClosedTime).TotalMilliseconds < 300)
+            {
                 return;
             }
 
