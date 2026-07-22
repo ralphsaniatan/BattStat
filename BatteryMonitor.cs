@@ -1535,7 +1535,7 @@ namespace BatteryMonitorApp
             // Enable double buffering to prevent flickering during hover transitions
             this.DoubleBuffered = true;
 
-            this.Text = "BattStat v1.2.2";
+            this.Text = "BattStat v1.2.3";
             int activeCount = (context.outerConfig.Protocol != "None" ? 1 : 0) + (context.middleConfig.Protocol != "None" ? 1 : 0) + (context.innerConfig.Protocol != "None" ? 1 : 0);
             int formHeight = 440 - ((3 - activeCount) * 45);
             this.Size = new Size(260, formHeight);
@@ -1815,7 +1815,7 @@ namespace BatteryMonitorApp
                 using (StringFormat sf = new StringFormat())
                 {
                     sf.Alignment = StringAlignment.Far;
-                    g.DrawString("v1.2.2", fontVersion, verBrush, new RectangleF(150, 16, 90, 20), sf);
+                    g.DrawString("v1.2.3", fontVersion, verBrush, new RectangleF(150, 16, 90, 20), sf);
                 }
             }
 
