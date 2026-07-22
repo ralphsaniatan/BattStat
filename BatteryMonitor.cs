@@ -1230,7 +1230,7 @@ namespace BatteryMonitorApp
                 }
                 else
                 {
-                    if (deviceItems[i].Vid == outerConfig.Vid && deviceItems[i].Pid == outerConfig.Pid && outerConfig.Protocol != "Bluetooth")
+                    if (deviceItems[i].Vid == outerConfig.Vid && deviceItems[i].Pid == outerConfig.Pid && outerConfig.Protocol != "Bluetooth" && outerConfig.Protocol != "None")
                     {
                         selectedOuterIndex = i + 1;
                     }
@@ -1275,7 +1275,7 @@ namespace BatteryMonitorApp
                 }
                 else
                 {
-                    if (deviceItems[i].Vid == middleConfig.Vid && deviceItems[i].Pid == middleConfig.Pid && middleConfig.Protocol != "Bluetooth")
+                    if (deviceItems[i].Vid == middleConfig.Vid && deviceItems[i].Pid == middleConfig.Pid && middleConfig.Protocol != "Bluetooth" && middleConfig.Protocol != "None")
                     {
                         selectedMiddleIndex = i + 1;
                     }
@@ -1320,7 +1320,7 @@ namespace BatteryMonitorApp
                 }
                 else
                 {
-                    if (deviceItems[i].Vid == innerConfig.Vid && deviceItems[i].Pid == innerConfig.Pid && innerConfig.Protocol != "Bluetooth")
+                    if (deviceItems[i].Vid == innerConfig.Vid && deviceItems[i].Pid == innerConfig.Pid && innerConfig.Protocol != "Bluetooth" && innerConfig.Protocol != "None")
                     {
                         selectedInnerIndex = i + 1;
                     }
