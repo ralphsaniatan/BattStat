@@ -407,6 +407,8 @@ namespace BatteryMonitorApp
         public DeviceConfig middleConfig = new DeviceConfig(0x3554, 0xF503, 0xFF02, "VGN");
         public DeviceConfig innerConfig = new DeviceConfig(0, 0, 0, "None");
 
+        private bool autoUpdateEnabled = true;
+
         // Shared state for Settings Form
         public bool LastOuterTransmitterConnected { get; private set; }
         public bool LastOuterConnected { get; private set; }
@@ -460,7 +462,10 @@ namespace BatteryMonitorApp
             notifyIcon.ContextMenuStrip = contextMenu;
 
             // Start update check in background
-            Task.Run(() => CheckForUpdates());
+            if (autoUpdateEnabled)
+            {
+                Task.Run(() => CheckForUpdates());
+            }
 
             // Initial status query
             UpdateBatteryStatus();
@@ -525,6 +530,7 @@ namespace BatteryMonitorApp
                     else if (key == "InnerCustomReadLength") innerConfig.CustomReadLength = Convert.ToInt32(val);
                     else if (key == "InnerCustomBatteryIndex") innerConfig.CustomBatteryIndex = Convert.ToInt32(val);
                     else if (key == "InnerCustomWiredIndex") innerConfig.CustomWiredIndex = Convert.ToInt32(val);
+                    else if (key == "AutoUpdate") autoUpdateEnabled = (val.ToLower() == "true");
                 }
             }
             catch { }
@@ -568,6 +574,7 @@ namespace BatteryMonitorApp
                 lines.Add("InnerCustomReadLength=" + innerConfig.CustomReadLength);
                 lines.Add("InnerCustomBatteryIndex=" + innerConfig.CustomBatteryIndex);
                 lines.Add("InnerCustomWiredIndex=" + innerConfig.CustomWiredIndex);
+                lines.Add("AutoUpdate=" + autoUpdateEnabled.ToString());
 
                 File.WriteAllLines(path, lines.ToArray());
             }
@@ -1128,7 +1135,7 @@ namespace BatteryMonitorApp
 
             settingsForm = new Form();
             settingsForm.Text = "Universal Battery Monitor Settings";
-            settingsForm.Size = new Size(390, 440); // Height increased to 440
+            settingsForm.Size = new Size(390, 465); // Height increased to 465
             settingsForm.StartPosition = FormStartPosition.CenterScreen;
             settingsForm.FormBorderStyle = FormBorderStyle.FixedDialog;
             settingsForm.MaximizeBox = false;
@@ -1362,11 +1369,19 @@ namespace BatteryMonitorApp
             chkStartup.Checked = File.Exists(shortcutPath);
             settingsForm.Controls.Add(chkStartup);
 
+            CheckBox chkUpdate = new CheckBox();
+            chkUpdate.Text = "Check for updates on startup";
+            chkUpdate.Font = fontLabel;
+            chkUpdate.Location = new Point(20, 330);
+            chkUpdate.Size = new Size(340, 25);
+            chkUpdate.Checked = autoUpdateEnabled;
+            settingsForm.Controls.Add(chkUpdate);
+
             // Action Buttons
             Button btnRefresh = new Button();
             btnRefresh.Text = "Refresh Scan";
             btnRefresh.Font = fontButton;
-            btnRefresh.Location = new Point(20, 350);
+            btnRefresh.Location = new Point(20, 365);
             btnRefresh.Size = new Size(130, 30);
             btnRefresh.FlatStyle = FlatStyle.Flat;
             btnRefresh.FlatAppearance.BorderColor = Color.FromArgb(100, 100, 100);
@@ -1381,7 +1396,7 @@ namespace BatteryMonitorApp
             Button btnClose = new Button();
             btnClose.Text = "Save & Close";
             btnClose.Font = fontButton;
-            btnClose.Location = new Point(230, 350);
+            btnClose.Location = new Point(230, 365);
             btnClose.Size = new Size(125, 30);
             btnClose.FlatStyle = FlatStyle.Flat;
             btnClose.FlatAppearance.BorderColor = Color.FromArgb(100, 100, 100);
@@ -1394,6 +1409,8 @@ namespace BatteryMonitorApp
                 SaveSelectedDevice(cbMiddleDevice, middleConfig, deviceItems, "Middle Ring");
                 // Save Inner
                 SaveSelectedDevice(cbInnerDevice, innerConfig, deviceItems, "Inner Ring");
+
+                autoUpdateEnabled = chkUpdate.Checked;
 
                 SaveConfiguration();
 
