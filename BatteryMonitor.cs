@@ -384,17 +384,17 @@ namespace BatteryMonitorApp
         private ContextMenuStrip contextMenu;
         private Timer timer;
 
-        private bool warnedOuter20 = false;
+        private bool warnedOuter25 = false;
         private bool warnedOuter10 = false;
         private bool warnedOuterHealth = false;
         private List<BatteryHistoryEntry> outerHistory = new List<BatteryHistoryEntry>();
 
-        private bool warnedMiddle20 = false;
+        private bool warnedMiddle25 = false;
         private bool warnedMiddle10 = false;
         private bool warnedMiddleHealth = false;
         private List<BatteryHistoryEntry> middleHistory = new List<BatteryHistoryEntry>();
 
-        private bool warnedInner20 = false;
+        private bool warnedInner25 = false;
         private bool warnedInner10 = false;
         private bool warnedInnerHealth = false;
         private List<BatteryHistoryEntry> innerHistory = new List<BatteryHistoryEntry>();
@@ -845,12 +845,12 @@ namespace BatteryMonitorApp
             return false;
         }
 
-        private void RunBatteryWarnings(string label, bool connected, int battery, ref bool warned10, ref bool warned20, ref bool warnedHealth, List<BatteryHistoryEntry> history)
+        private void RunBatteryWarnings(string label, bool connected, int battery, ref bool warned10, ref bool warned25, ref bool warnedHealth, List<BatteryHistoryEntry> history)
         {
             if (!connected || battery < 0)
             {
                 warned10 = false;
-                warned20 = false;
+                warned25 = false;
                 return;
             }
 
@@ -887,15 +887,15 @@ namespace BatteryMonitorApp
                 if (!warned10)
                 {
                     warned10 = true;
-                    warned20 = true;
+                    warned25 = true;
                     ShowNotification(label + " Device Critical", "Battery level is at " + battery + "%. Please charge.", ToolTipIcon.Warning);
                 }
             }
-            else if (battery <= 20)
+            else if (battery <= 25)
             {
-                if (!warned20)
+                if (!warned25)
                 {
-                    warned20 = true;
+                    warned25 = true;
                     ShowNotification(label + " Device Low", "Battery level is at " + battery + "%.", ToolTipIcon.Info);
                 }
                 warned10 = false;
@@ -903,7 +903,7 @@ namespace BatteryMonitorApp
             else
             {
                 warned10 = false;
-                warned20 = false;
+                warned25 = false;
             }
         }
 
@@ -961,9 +961,9 @@ namespace BatteryMonitorApp
             LastInnerDeviceName = (innerDev != null && !string.IsNullOrEmpty(innerDev.ProductName)) ? innerDev.ProductName : innerConfig.DeviceName;
 
             // 4. Low battery warnings
-            RunBatteryWarnings("Outer", outerConnected, outerBattery, ref warnedOuter10, ref warnedOuter20, ref warnedOuterHealth, outerHistory);
-            RunBatteryWarnings("Middle", middleConnected, middleBattery, ref warnedMiddle10, ref warnedMiddle20, ref warnedMiddleHealth, middleHistory);
-            RunBatteryWarnings("Inner", innerConnected, innerBattery, ref warnedInner10, ref warnedInner20, ref warnedInnerHealth, innerHistory);
+            RunBatteryWarnings("Outer", outerConnected, outerBattery, ref warnedOuter10, ref warnedOuter25, ref warnedOuterHealth, outerHistory);
+            RunBatteryWarnings("Middle", middleConnected, middleBattery, ref warnedMiddle10, ref warnedMiddle25, ref warnedMiddleHealth, middleHistory);
+            RunBatteryWarnings("Inner", innerConnected, innerBattery, ref warnedInner10, ref warnedInner25, ref warnedInnerHealth, innerHistory);
 
             // 5. Tooltip
             string oTooltip = GetTooltipLine("Outer", outerConfig, outerConnected, outerBattery, outerTransmitterConnected, outerWired);
@@ -995,27 +995,43 @@ namespace BatteryMonitorApp
                     g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                     g.Clear(Color.Transparent);
 
-                    // --- OUTER RING ---
-                    DrawTrayRing(g, outerConfig, outerConnected, outerBattery, 1.2f, 13.6f, Color.FromArgb(255, 17, 72));
+                    int activeCount = (outerConfig.Protocol != "None" ? 1 : 0) + (middleConfig.Protocol != "None" ? 1 : 0) + (innerConfig.Protocol != "None" ? 1 : 0);
+                    float penW = activeCount == 1 ? 3.2f : (activeCount == 2 ? 2.4f : 1.6f);
+                    
+                    int currentIdx = 0;
+                    Action<DeviceConfig, bool, int, Color> DrawDynamicTray = (cfg, conn, bat, col) => {
+                        if (cfg.Protocol == "None") return;
+                        float xy = 0f, size = 0f;
+                        if (activeCount == 1) { xy = 3.2f; size = 9.6f; }
+                        else if (activeCount == 2) { 
+                            if (currentIdx == 0) { xy = 1.6f; size = 12.8f; }
+                            else { xy = 4.8f; size = 6.4f; }
+                        }
+                        else {
+                            if (currentIdx == 0) { xy = 1.2f; size = 13.6f; }
+                            else if (currentIdx == 1) { xy = 3.2f; size = 9.6f; }
+                            else { xy = 5.2f; size = 5.6f; }
+                        }
+                        currentIdx++;
+                        DrawTrayRing(g, cfg, conn, bat, xy, size, penW, col);
+                    };
 
-                    // --- MIDDLE RING ---
-                    DrawTrayRing(g, middleConfig, middleConnected, middleBattery, 3.2f, 9.6f, Color.FromArgb(0, 180, 255));
-
-                    // --- INNER RING ---
-                    DrawTrayRing(g, innerConfig, innerConnected, innerBattery, 5.2f, 5.6f, Color.FromArgb(170, 255, 0));
+                    DrawDynamicTray(outerConfig, outerConnected, outerBattery, Color.FromArgb(255, 17, 72));
+                    DrawDynamicTray(middleConfig, middleConnected, middleBattery, Color.FromArgb(0, 180, 255));
+                    DrawDynamicTray(innerConfig, innerConnected, innerBattery, Color.FromArgb(170, 255, 0));
 
                     return Icon.FromHandle(bmp.GetHicon());
                 }
             }
         }
 
-        private void DrawTrayRing(Graphics g, DeviceConfig config, bool connected, int battery, float xy, float size, Color ringColor)
+        private void DrawTrayRing(Graphics g, DeviceConfig config, bool connected, int battery, float xy, float size, float penWidth, Color ringColor)
         {
             if (config.Protocol == "None") return;
 
             // Background circle (Dark Grey if connected and has battery, solid Grey if disconnected or no battery data)
             Color bgCol = (connected && battery >= 0) ? Color.FromArgb(40, 255, 255, 255) : Color.FromArgb(100, 128, 128, 128);
-            using (Pen penBg = new Pen(bgCol, 1.6f))
+            using (Pen penBg = new Pen(bgCol, penWidth))
             {
                 g.DrawEllipse(penBg, xy, xy, size, size);
             }
@@ -1024,9 +1040,9 @@ namespace BatteryMonitorApp
             if (connected && battery >= 0)
             {
                 Color activeCol = ringColor;
-                if (battery <= 20) activeCol = Color.FromArgb(231, 76, 60); // Red warn
+                if (battery <= 25) activeCol = Color.FromArgb(231, 76, 60); // Red warn
 
-                using (Pen penActive = new Pen(activeCol, 1.6f))
+                using (Pen penActive = new Pen(activeCol, penWidth))
                 {
                     // Apple Watch style: rounded caps!
                     penActive.StartCap = System.Drawing.Drawing2D.LineCap.Round;
@@ -1792,7 +1808,7 @@ namespace BatteryMonitorApp
                 using (StringFormat sf = new StringFormat())
                 {
                     sf.Alignment = StringAlignment.Far;
-                    g.DrawString("v1.2.1", fontVersion, verBrush, new RectangleF(150, 16, 90, 20), sf);
+                    g.DrawString("v1.2.2", fontVersion, verBrush, new RectangleF(150, 16, 90, 20), sf);
                 }
             }
 
@@ -1800,17 +1816,33 @@ namespace BatteryMonitorApp
             float cx = this.Width / 2f;
             float cy = 150f;
 
+            int activeCount = (context.outerConfig.Protocol != "None" ? 1 : 0) + 
+                              (context.middleConfig.Protocol != "None" ? 1 : 0) + 
+                              (context.innerConfig.Protocol != "None" ? 1 : 0);
+            float penW = activeCount == 1 ? 32f : (activeCount == 2 ? 24f : 16f);
+            
+            int currentIdx = 0;
+            Func<DeviceConfig, float> GetRadius = (cfg) => {
+                if (cfg.Protocol == "None") return 0f;
+                float r = 0f;
+                if (activeCount == 1) r = 62f;
+                else if (activeCount == 2) r = (currentIdx == 0) ? 74f : 46f;
+                else r = (currentIdx == 0) ? 82f : (currentIdx == 1 ? 62f : 42f);
+                currentIdx++;
+                return r;
+            };
+
             // Outer Ring (Red/Pink)
             Color outerBase = Color.FromArgb(255, 17, 72);
-            DrawLargeRing(g, context.outerConfig, context.LastOuterConnected, context.LastOuterBattery, cx, cy, 82f, 16f, outerBase, hoverFactors[0]);
+            DrawLargeRing(g, context.outerConfig, context.LastOuterConnected, context.LastOuterBattery, cx, cy, GetRadius(context.outerConfig), penW, outerBase, hoverFactors[0]);
 
             // Middle Ring (Cyan/Blue)
             Color middleBase = Color.FromArgb(0, 180, 255);
-            DrawLargeRing(g, context.middleConfig, context.LastMiddleConnected, context.LastMiddleBattery, cx, cy, 62f, 16f, middleBase, hoverFactors[1]);
+            DrawLargeRing(g, context.middleConfig, context.LastMiddleConnected, context.LastMiddleBattery, cx, cy, GetRadius(context.middleConfig), penW, middleBase, hoverFactors[1]);
 
             // Inner Ring (Lime Green)
             Color innerBase = Color.FromArgb(170, 255, 0);
-            DrawLargeRing(g, context.innerConfig, context.LastInnerConnected, context.LastInnerBattery, cx, cy, 42f, 16f, innerBase, hoverFactors[2]);
+            DrawLargeRing(g, context.innerConfig, context.LastInnerConnected, context.LastInnerBattery, cx, cy, GetRadius(context.innerConfig), penW, innerBase, hoverFactors[2]);
 
             // --- DIVIDERS & ROWS ---
             using (Pen divPen = new Pen(Color.FromArgb(40, 40, 40), 1))
@@ -1878,7 +1910,7 @@ namespace BatteryMonitorApp
             if (connected && battery >= 0)
             {
                 Color activeCol = ringColor;
-                if (battery <= 20) activeCol = Color.FromArgb(231, 76, 60);
+                if (battery <= 25) activeCol = Color.FromArgb(231, 76, 60);
 
                 int arcAlpha = (int)(255 * hoverFactor);
                 using (Pen penActive = new Pen(Color.FromArgb(arcAlpha, activeCol), penWidth))
