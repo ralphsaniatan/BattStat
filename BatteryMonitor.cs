@@ -5,6 +5,9 @@ using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Net;
+using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 
 [assembly: AssemblyTitle("Arctis & VGN Battery Monitor")]
 [assembly: AssemblyDescription("Lightweight tray battery monitor")]
@@ -445,11 +448,19 @@ namespace BatteryMonitorApp
 
             // Create Context Menu
             contextMenu = new ContextMenuStrip();
+            updateMenuItem = new ToolStripMenuItem("Update Available!");
+            updateMenuItem.Visible = false;
+            updateMenuItem.Click += (s, e) => System.Diagnostics.Process.Start("https://github.com/ralphsaniatan/BattStat/releases/latest");
+            contextMenu.Items.Add(updateMenuItem);
+
             contextMenu.Items.Add("Settings", null, (s, e) => ShowSettingsWindow());
             contextMenu.Items.Add("Refresh", null, (s, e) => UpdateBatteryStatus());
             contextMenu.Items.Add("-");
             contextMenu.Items.Add("Exit", null, (s, e) => ExitApplication());
             notifyIcon.ContextMenuStrip = contextMenu;
+
+            // Start update check in background
+            Task.Run(() => CheckForUpdates());
 
             // Initial status query
             UpdateBatteryStatus();
@@ -1490,6 +1501,43 @@ namespace BatteryMonitorApp
             activeFlyout.Show();
             SetForegroundWindow(activeFlyout.Handle);
             activeFlyout.Activate();
+        }
+
+        private ToolStripMenuItem updateMenuItem;
+
+        private void CheckForUpdates()
+        {
+            try
+            {
+                using (WebClient wc = new WebClient())
+                {
+                    wc.Headers.Add("User-Agent", "BattStat-Update-Checker");
+                    string json = wc.DownloadString("https://api.github.com/repos/ralphsaniatan/BattStat/releases/latest");
+                    Match m = Regex.Match(json, "\"tag_name\"\\s*:\\s*\"v?([0-9\\.]+)\"");
+                    if (m.Success)
+                    {
+                        string latestVersionStr = m.Groups[1].Value;
+                        Version latest = new Version(latestVersionStr);
+                        Version current = new Version("1.2.3"); 
+                        
+                        if (latest > current)
+                        {
+                            Action updateUI = () => {
+                                updateMenuItem.Text = "Update Available! (v" + latestVersionStr + ")";
+                                updateMenuItem.Visible = true;
+                                updateMenuItem.Font = new Font(updateMenuItem.Font, FontStyle.Bold);
+                                ShowNotification("Update Available", "BattStat v" + latestVersionStr + " is available! Right-click the tray icon to download.", ToolTipIcon.Info);
+                            };
+
+                            if (contextMenu.InvokeRequired)
+                                contextMenu.Invoke(updateUI);
+                            else
+                                updateUI();
+                        }
+                    }
+                }
+            }
+            catch { /* Ignore network errors */ }
         }
 
         public void ExitApplication()
