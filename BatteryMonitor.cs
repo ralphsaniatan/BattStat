@@ -1472,8 +1472,9 @@ namespace BatteryMonitorApp
                 return;
             }
 
+            int activeCount = (outerConfig.Protocol != "None" ? 1 : 0) + (middleConfig.Protocol != "None" ? 1 : 0) + (innerConfig.Protocol != "None" ? 1 : 0);
             int fWidth = 260;
-            int fHeight = 440;
+            int fHeight = 440 - ((3 - activeCount) * 45);
 
             Point mousePos = Control.MousePosition;
             int x = mousePos.X - (fWidth / 2);
@@ -1534,8 +1535,10 @@ namespace BatteryMonitorApp
             // Enable double buffering to prevent flickering during hover transitions
             this.DoubleBuffered = true;
 
-            this.Text = "BattStat v1.2.1";
-            this.Size = new Size(260, 440); // Height increased to 440 to support spacing
+            this.Text = "BattStat v1.2.2";
+            int activeCount = (context.outerConfig.Protocol != "None" ? 1 : 0) + (context.middleConfig.Protocol != "None" ? 1 : 0) + (context.innerConfig.Protocol != "None" ? 1 : 0);
+            int formHeight = 440 - ((3 - activeCount) * 45);
+            this.Size = new Size(260, formHeight);
             this.FormBorderStyle = FormBorderStyle.None;
             this.BackColor = Color.FromArgb(28, 28, 28); // Dark charcoal background
             this.ShowInTaskbar = false;
@@ -1564,7 +1567,7 @@ namespace BatteryMonitorApp
             Button btnRefresh = new Button();
             btnRefresh.Text = "\uE72C";
             btnRefresh.Font = fontIcons;
-            btnRefresh.Location = new Point(175, 399); // Shifted down to match height 440
+            btnRefresh.Location = new Point(175, formHeight - 41);
             btnRefresh.Size = new Size(32, 32);
             btnRefresh.FlatStyle = FlatStyle.Flat;
             btnRefresh.FlatAppearance.BorderSize = 0;
@@ -1587,7 +1590,7 @@ namespace BatteryMonitorApp
             Button btnSettings = new Button();
             btnSettings.Text = "\uE713";
             btnSettings.Font = fontIcons;
-            btnSettings.Location = new Point(210, 399); // Shifted down to match height 440
+            btnSettings.Location = new Point(210, formHeight - 41);
             btnSettings.Size = new Size(32, 32);
             btnSettings.FlatStyle = FlatStyle.Flat;
             btnSettings.FlatAppearance.BorderSize = 0;
@@ -1734,17 +1737,21 @@ namespace BatteryMonitorApp
             // 1. Check if hovering device list rows
             if (x >= 0 && x <= this.Width)
             {
-                if (y >= 255 && y < 300)
+                int currY = 255;
+                if (context.outerConfig.Protocol != "None")
                 {
-                    if (context.outerConfig.Protocol != "None") newHoveredIndex = 0;
+                    if (y >= currY && y < currY + 45) newHoveredIndex = 0;
+                    currY += 45;
                 }
-                else if (y >= 300 && y < 345)
+                if (context.middleConfig.Protocol != "None")
                 {
-                    if (context.middleConfig.Protocol != "None") newHoveredIndex = 1;
+                    if (y >= currY && y < currY + 45) newHoveredIndex = 1;
+                    currY += 45;
                 }
-                else if (y >= 345 && y < 390)
+                if (context.innerConfig.Protocol != "None")
                 {
-                    if (context.innerConfig.Protocol != "None") newHoveredIndex = 2;
+                    if (y >= currY && y < currY + 45) newHoveredIndex = 2;
+                    currY += 45;
                 }
             }
 
@@ -1845,39 +1852,47 @@ namespace BatteryMonitorApp
             DrawLargeRing(g, context.innerConfig, context.LastInnerConnected, context.LastInnerBattery, cx, cy, GetRadius(context.innerConfig), penW, innerBase, hoverFactors[2]);
 
             // --- DIVIDERS & ROWS ---
+            int startY = 255;
             using (Pen divPen = new Pen(Color.FromArgb(40, 40, 40), 1))
             {
-                g.DrawLine(divPen, 0, 255, this.Width, 255);
-                g.DrawLine(divPen, 0, 300, this.Width, 300);
-                g.DrawLine(divPen, 0, 345, this.Width, 345);
-                g.DrawLine(divPen, 0, 390, this.Width, 390);
+                g.DrawLine(divPen, 0, startY, this.Width, startY);
+                
+                if (context.outerConfig.Protocol != "None")
+                {
+                    DrawHoverRowBackground(g, startY, highlightFactors[0]);
+                    string outerRaw = !string.IsNullOrEmpty(context.LastOuterDeviceName) ? context.LastOuterDeviceName : 
+                                      (!string.IsNullOrEmpty(context.outerConfig.DeviceName) ? context.outerConfig.DeviceName : "Outer Ring");
+                    string outerName = context.GetFriendlyDeviceName(outerRaw, context.outerConfig.Vid, context.outerConfig.Pid);
+                    if (string.IsNullOrEmpty(outerName)) outerName = "Outer Ring";
+                    DrawDeviceRow(g, startY, outerName, context.LastOuterConnected, context.LastOuterBattery, outerBase, context.LastOuterWired, hoverFactors[0], highlightFactors[0]);
+                    startY += 45;
+                    g.DrawLine(divPen, 0, startY, this.Width, startY);
+                }
+
+                if (context.middleConfig.Protocol != "None")
+                {
+                    DrawHoverRowBackground(g, startY, highlightFactors[1]);
+                    string middleRaw = !string.IsNullOrEmpty(context.LastMiddleDeviceName) ? context.LastMiddleDeviceName : 
+                                       (!string.IsNullOrEmpty(context.middleConfig.DeviceName) ? context.middleConfig.DeviceName : "Middle Ring");
+                    string middleName = context.GetFriendlyDeviceName(middleRaw, context.middleConfig.Vid, context.middleConfig.Pid);
+                    if (string.IsNullOrEmpty(middleName)) middleName = "Middle Ring";
+                    DrawDeviceRow(g, startY, middleName, context.LastMiddleConnected, context.LastMiddleBattery, middleBase, context.LastMiddleWired, hoverFactors[1], highlightFactors[1]);
+                    startY += 45;
+                    g.DrawLine(divPen, 0, startY, this.Width, startY);
+                }
+
+                if (context.innerConfig.Protocol != "None")
+                {
+                    DrawHoverRowBackground(g, startY, highlightFactors[2]);
+                    string innerRaw = !string.IsNullOrEmpty(context.LastInnerDeviceName) ? context.LastInnerDeviceName : 
+                                       (!string.IsNullOrEmpty(context.innerConfig.DeviceName) ? context.innerConfig.DeviceName : "Inner Ring");
+                    string innerName = context.GetFriendlyDeviceName(innerRaw, context.innerConfig.Vid, context.innerConfig.Pid);
+                    if (string.IsNullOrEmpty(innerName)) innerName = "Inner Ring";
+                    DrawDeviceRow(g, startY, innerName, context.LastInnerConnected, context.LastInnerBattery, innerBase, context.LastInnerWired, hoverFactors[2], highlightFactors[2]);
+                    startY += 45;
+                    g.DrawLine(divPen, 0, startY, this.Width, startY);
+                }
             }
-
-            // Draw highlighted row backgrounds
-            DrawHoverRowBackground(g, 255, highlightFactors[0]);
-            DrawHoverRowBackground(g, 300, highlightFactors[1]);
-            DrawHoverRowBackground(g, 345, highlightFactors[2]);
-
-            // Row 1: Outer Device
-            string outerRaw = !string.IsNullOrEmpty(context.LastOuterDeviceName) ? context.LastOuterDeviceName : 
-                              (!string.IsNullOrEmpty(context.outerConfig.DeviceName) ? context.outerConfig.DeviceName : "Outer Ring");
-            string outerName = context.GetFriendlyDeviceName(outerRaw, context.outerConfig.Vid, context.outerConfig.Pid);
-            if (string.IsNullOrEmpty(outerName)) outerName = "Outer Ring";
-            DrawDeviceRow(g, 255, outerName, context.LastOuterConnected, context.LastOuterBattery, outerBase, context.LastOuterWired, hoverFactors[0], highlightFactors[0]);
-
-            // Row 2: Middle Device
-            string middleRaw = !string.IsNullOrEmpty(context.LastMiddleDeviceName) ? context.LastMiddleDeviceName : 
-                               (!string.IsNullOrEmpty(context.middleConfig.DeviceName) ? context.middleConfig.DeviceName : "Middle Ring");
-            string middleName = context.GetFriendlyDeviceName(middleRaw, context.middleConfig.Vid, context.middleConfig.Pid);
-            if (string.IsNullOrEmpty(middleName)) middleName = "Middle Ring";
-            DrawDeviceRow(g, 300, middleName, context.LastMiddleConnected, context.LastMiddleBattery, middleBase, context.LastMiddleWired, hoverFactors[1], highlightFactors[1]);
-
-            // Row 3: Inner Device
-            string innerRaw = !string.IsNullOrEmpty(context.LastInnerDeviceName) ? context.LastInnerDeviceName : 
-                               (!string.IsNullOrEmpty(context.innerConfig.DeviceName) ? context.innerConfig.DeviceName : "Inner Ring");
-            string innerName = context.GetFriendlyDeviceName(innerRaw, context.innerConfig.Vid, context.innerConfig.Pid);
-            if (string.IsNullOrEmpty(innerName)) innerName = "Inner Ring";
-            DrawDeviceRow(g, 345, innerName, context.LastInnerConnected, context.LastInnerBattery, innerBase, context.LastInnerWired, hoverFactors[2], highlightFactors[2]);
         }
 
         private void DrawHoverRowBackground(Graphics g, int yStart, float highlightFactor)
