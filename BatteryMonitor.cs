@@ -407,10 +407,10 @@ namespace BatteryMonitorApp
         public DeviceConfig middleConfig = new DeviceConfig(0x3554, 0xF503, 0xFF02, "VGN");
         public DeviceConfig innerConfig = new DeviceConfig(0, 0, 0, "None");
 
-        private bool autoUpdateEnabled = true;
+        public bool autoUpdateEnabled = true;
 
         // Theme: "Dark" | "Light" | "System"
-        private string themeMode = "System";
+        public string themeMode = "System";
 
         public static class Theme
         {
@@ -511,7 +511,6 @@ namespace BatteryMonitorApp
         public string LastMiddleDeviceName { get; private set; }
         public string LastInnerDeviceName { get; private set; }
 
-        private Form settingsForm = null;
         private FlyoutForm activeFlyout = null;
         private DateTime lastClosedTime = DateTime.MinValue;
 
@@ -622,7 +621,7 @@ namespace BatteryMonitorApp
             catch { }
         }
 
-        private void SaveConfiguration()
+        public void SaveConfiguration()
         {
             try
             {
@@ -1214,46 +1213,37 @@ namespace BatteryMonitorApp
 
         public void ShowSettingsWindow()
         {
-            if (settingsForm != null && settingsForm.Visible)
+            // Settings now live inside the main flyout window (in-place settings view).
+            // If a flyout is already open, flip it to the settings view; otherwise open one.
+            if (activeFlyout != null && !activeFlyout.IsDisposed && activeFlyout.Visible)
             {
-                settingsForm.Focus();
-                return;
+                activeFlyout.ShowSettingsView();
             }
+            else
+            {
+                ShowFlyoutWindow();
+                if (activeFlyout != null) activeFlyout.ShowSettingsView();
+            }
+        }
 
-            settingsForm = new Form();
-            settingsForm.Text = "Universal Battery Monitor Settings";
-            settingsForm.Size = new Size(390, 465); // Height increased to 465
-            settingsForm.StartPosition = FormStartPosition.CenterScreen;
-            settingsForm.FormBorderStyle = FormBorderStyle.FixedDialog;
-            settingsForm.MaximizeBox = false;
-            settingsForm.MinimizeBox = false;
-            settingsForm.BackColor = BatteryMonitorContext.Theme.FormBack;
-            settingsForm.ForeColor = BatteryMonitorContext.Theme.FormFore;
+        public string GetStatusLabelText(string position, DeviceConfig config, bool connected, int battery, bool transmitterConnected, bool wired)
+        {
+            string txt = "Status: ";
+            if (config.Protocol == "None") txt += "Disabled";
+            else if (connected) txt += "Connected (" + battery + "%)" + (wired ? " [Charging]" : "");
+            else if (transmitterConnected) txt += "Powered Off";
+            else txt += "Disconnected";
+            return txt;
+        }
 
-            Font fontTitle = new Font("Segoe UI", 12f, FontStyle.Bold);
-            Font fontLabel = new Font("Segoe UI", 9.5f, FontStyle.Bold);
-            Font fontSub = new Font("Segoe UI", 8.5f, FontStyle.Regular);
-            Font fontButton = new Font("Segoe UI", 9, FontStyle.Regular);
-
-            // Title
-            Label lblTitle = new Label();
-            lblTitle.Text = "Universal Device Tracking Settings";
-            lblTitle.Font = fontTitle;
-            lblTitle.Location = new Point(15, 15);
-            lblTitle.Size = new Size(360, 25);
-            settingsForm.Controls.Add(lblTitle);
-
-            // Fetch connected USB HID devices
-            List<HidDeviceMetadata> connectedHid = GetConnectedHidDevices();
+        public List<SettingsDeviceItem> ScanAvailableDevices()
+        {
             List<SettingsDeviceItem> deviceItems = new List<SettingsDeviceItem>();
             List<string> seenKeys = new List<string>();
 
-            foreach (var dev in connectedHid)
+            foreach (var dev in GetConnectedHidDevices())
             {
-                if (GetProtocolForDevice(dev.Vid, dev.ProductName) == "None")
-                {
-                    continue;
-                }
+                if (GetProtocolForDevice(dev.Vid, dev.ProductName) == "None") continue;
 
                 string key = "HID_" + dev.Vid.ToString("X4") + "_" + dev.Pid.ToString("X4");
                 if (!seenKeys.Contains(key))
@@ -1271,9 +1261,7 @@ namespace BatteryMonitorApp
                 }
             }
 
-            // Fetch connected Bluetooth devices
-            List<BluetoothDeviceMetadata> connectedBt = GetConnectedBluetoothDevices();
-            foreach (var dev in connectedBt)
+            foreach (var dev in GetConnectedBluetoothDevices())
             {
                 string key = "BT_" + dev.FriendlyName;
                 if (!seenKeys.Contains(key))
@@ -1294,287 +1282,10 @@ namespace BatteryMonitorApp
                 }
             }
 
-            // --- OUTER RING CONFIG ---
-            Label lblOuter = new Label();
-            lblOuter.Text = "Outer Ring:";
-            lblOuter.Font = fontLabel;
-            lblOuter.Location = new Point(20, 50);
-            lblOuter.Size = new Size(150, 20);
-            settingsForm.Controls.Add(lblOuter);
-
-            ComboBox cbOuterDevice = new ComboBox();
-            cbOuterDevice.DropDownStyle = ComboBoxStyle.DropDownList;
-            cbOuterDevice.Font = fontLabel;
-            cbOuterDevice.Location = new Point(20, 75);
-            cbOuterDevice.Size = new Size(345, 25);
-            cbOuterDevice.BackColor = BatteryMonitorContext.Theme.ControlBack;
-            cbOuterDevice.ForeColor = BatteryMonitorContext.Theme.FormFore;
-            cbOuterDevice.FlatStyle = FlatStyle.Flat;
-            cbOuterDevice.Items.Add("[ None / Disabled ]");
-            int selectedOuterIndex = 0;
-            for (int i = 0; i < deviceItems.Count; i++)
-            {
-                cbOuterDevice.Items.Add(deviceItems[i].DisplayName);
-                if (deviceItems[i].Protocol == "Bluetooth")
-                {
-                    if (outerConfig.Protocol == "Bluetooth" && deviceItems[i].DeviceName == outerConfig.DeviceName)
-                    {
-                        selectedOuterIndex = i + 1;
-                    }
-                }
-                else
-                {
-                    if (deviceItems[i].Vid == outerConfig.Vid && deviceItems[i].Pid == outerConfig.Pid && outerConfig.Protocol != "Bluetooth" && outerConfig.Protocol != "None")
-                    {
-                        selectedOuterIndex = i + 1;
-                    }
-                }
-            }
-            cbOuterDevice.SelectedIndex = selectedOuterIndex;
-            settingsForm.Controls.Add(cbOuterDevice);
-
-            Label lblOuterStatus = new Label();
-            lblOuterStatus.Font = fontSub;
-            lblOuterStatus.Location = new Point(20, 105);
-            lblOuterStatus.Size = new Size(340, 20);
-            settingsForm.Controls.Add(lblOuterStatus);
-
-            // --- MIDDLE RING CONFIG ---
-            Label lblMiddle = new Label();
-            lblMiddle.Text = "Middle Ring:";
-            lblMiddle.Font = fontLabel;
-            lblMiddle.Location = new Point(20, 130);
-            lblMiddle.Size = new Size(150, 20);
-            settingsForm.Controls.Add(lblMiddle);
-
-            ComboBox cbMiddleDevice = new ComboBox();
-            cbMiddleDevice.DropDownStyle = ComboBoxStyle.DropDownList;
-            cbMiddleDevice.Font = fontLabel;
-            cbMiddleDevice.Location = new Point(20, 155);
-            cbMiddleDevice.Size = new Size(345, 25);
-            cbMiddleDevice.BackColor = BatteryMonitorContext.Theme.ControlBack;
-            cbMiddleDevice.ForeColor = BatteryMonitorContext.Theme.FormFore;
-            cbMiddleDevice.FlatStyle = FlatStyle.Flat;
-            cbMiddleDevice.Items.Add("[ None / Disabled ]");
-            int selectedMiddleIndex = 0;
-            for (int i = 0; i < deviceItems.Count; i++)
-            {
-                cbMiddleDevice.Items.Add(deviceItems[i].DisplayName);
-                if (deviceItems[i].Protocol == "Bluetooth")
-                {
-                    if (middleConfig.Protocol == "Bluetooth" && deviceItems[i].DeviceName == middleConfig.DeviceName)
-                    {
-                        selectedMiddleIndex = i + 1;
-                    }
-                }
-                else
-                {
-                    if (deviceItems[i].Vid == middleConfig.Vid && deviceItems[i].Pid == middleConfig.Pid && middleConfig.Protocol != "Bluetooth" && middleConfig.Protocol != "None")
-                    {
-                        selectedMiddleIndex = i + 1;
-                    }
-                }
-            }
-            cbMiddleDevice.SelectedIndex = selectedMiddleIndex;
-            settingsForm.Controls.Add(cbMiddleDevice);
-
-            Label lblMiddleStatus = new Label();
-            lblMiddleStatus.Font = fontSub;
-            lblMiddleStatus.Location = new Point(20, 185);
-            lblMiddleStatus.Size = new Size(340, 20);
-            settingsForm.Controls.Add(lblMiddleStatus);
-
-            // --- INNER RING CONFIG ---
-            Label lblInner = new Label();
-            lblInner.Text = "Inner Ring:";
-            lblInner.Font = fontLabel;
-            lblInner.Location = new Point(20, 210);
-            lblInner.Size = new Size(150, 20);
-            settingsForm.Controls.Add(lblInner);
-
-            ComboBox cbInnerDevice = new ComboBox();
-            cbInnerDevice.DropDownStyle = ComboBoxStyle.DropDownList;
-            cbInnerDevice.Font = fontLabel;
-            cbInnerDevice.Location = new Point(20, 235);
-            cbInnerDevice.Size = new Size(345, 25);
-            cbInnerDevice.BackColor = BatteryMonitorContext.Theme.ControlBack;
-            cbInnerDevice.ForeColor = BatteryMonitorContext.Theme.FormFore;
-            cbInnerDevice.FlatStyle = FlatStyle.Flat;
-            cbInnerDevice.Items.Add("[ None / Disabled ]");
-            int selectedInnerIndex = 0;
-            for (int i = 0; i < deviceItems.Count; i++)
-            {
-                cbInnerDevice.Items.Add(deviceItems[i].DisplayName);
-                if (deviceItems[i].Protocol == "Bluetooth")
-                {
-                    if (innerConfig.Protocol == "Bluetooth" && deviceItems[i].DeviceName == innerConfig.DeviceName)
-                    {
-                        selectedInnerIndex = i + 1;
-                    }
-                }
-                else
-                {
-                    if (deviceItems[i].Vid == innerConfig.Vid && deviceItems[i].Pid == innerConfig.Pid && innerConfig.Protocol != "Bluetooth" && innerConfig.Protocol != "None")
-                    {
-                        selectedInnerIndex = i + 1;
-                    }
-                }
-            }
-            cbInnerDevice.SelectedIndex = selectedInnerIndex;
-            settingsForm.Controls.Add(cbInnerDevice);
-
-            Label lblInnerStatus = new Label();
-            lblInnerStatus.Font = fontSub;
-            lblInnerStatus.Location = new Point(20, 265);
-            lblInnerStatus.Size = new Size(340, 20);
-            settingsForm.Controls.Add(lblInnerStatus);
-
-            // Update Label Text function
-            Action updateLabels = () =>
-            {
-                lblOuterStatus.Text = GetStatusLabelText("Outer", outerConfig, LastOuterConnected, LastOuterBattery, LastOuterTransmitterConnected, LastOuterWired);
-                lblMiddleStatus.Text = GetStatusLabelText("Middle", middleConfig, LastMiddleConnected, LastMiddleBattery, false, LastMiddleWired);
-                lblInnerStatus.Text = GetStatusLabelText("Inner", innerConfig, LastInnerConnected, LastInnerBattery, false, LastInnerWired);
-            };
-
-            updateLabels();
-
-            Label lblDiv = new Label();
-            lblDiv.BackColor = BatteryMonitorContext.Theme.Divider;
-            lblDiv.Location = new Point(15, 295);
-            lblDiv.Size = new Size(340, 1);
-            settingsForm.Controls.Add(lblDiv);
-
-            // --- THEME PICKER ---
-            Label lblTheme = new Label();
-            lblTheme.Text = "Theme:";
-            lblTheme.Font = fontLabel;
-            lblTheme.Location = new Point(20, 305);
-            lblTheme.Size = new Size(80, 25);
-            settingsForm.Controls.Add(lblTheme);
-
-            ComboBox cbTheme = new ComboBox();
-            cbTheme.DropDownStyle = ComboBoxStyle.DropDownList;
-            cbTheme.Font = fontLabel;
-            cbTheme.Location = new Point(100, 303);
-            cbTheme.Size = new Size(265, 25);
-            cbTheme.BackColor = BatteryMonitorContext.Theme.ControlBack;
-            cbTheme.ForeColor = BatteryMonitorContext.Theme.FormFore;
-            cbTheme.FlatStyle = FlatStyle.Flat;
-            cbTheme.Items.AddRange(new object[] { "System (match Windows)", "Dark", "Light" });
-            if (themeMode == "Light") cbTheme.SelectedIndex = 2;
-            else if (themeMode == "Dark") cbTheme.SelectedIndex = 1;
-            else cbTheme.SelectedIndex = 0;
-            settingsForm.Controls.Add(cbTheme);
-
-            CheckBox chkStartup = new CheckBox();
-            chkStartup.Text = "Run application at Windows Startup";
-            chkStartup.Font = fontLabel;
-            chkStartup.Location = new Point(20, 305);
-            chkStartup.Size = new Size(340, 25);
-
-            string startupFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Microsoft\Windows\Start Menu\Programs\Startup");
-            string shortcutPath = Path.Combine(startupFolder, "BattStat.lnk");
-            chkStartup.Checked = File.Exists(shortcutPath);
-            settingsForm.Controls.Add(chkStartup);
-
-            CheckBox chkUpdate = new CheckBox();
-            chkUpdate.Text = "Check for updates on startup";
-            chkUpdate.Font = fontLabel;
-            chkUpdate.Location = new Point(20, 363);
-            chkUpdate.Size = new Size(340, 25);
-            chkUpdate.Checked = autoUpdateEnabled;
-            settingsForm.Controls.Add(chkUpdate);
-
-            // Action Buttons
-            Button btnRefresh = new Button();
-            btnRefresh.Text = "Refresh Scan";
-            btnRefresh.Font = fontButton;
-            btnRefresh.Location = new Point(20, 395);
-            btnRefresh.Size = new Size(130, 30);
-            btnRefresh.FlatStyle = FlatStyle.Flat;
-            btnRefresh.FlatAppearance.BorderColor = BatteryMonitorContext.Theme.ButtonBorder;
-            btnRefresh.Cursor = Cursors.Hand;
-            btnRefresh.Click += (s, e) =>
-            {
-                UpdateBatteryStatus();
-                updateLabels();
-            };
-            settingsForm.Controls.Add(btnRefresh);
-
-            Button btnClose = new Button();
-            btnClose.Text = "Save & Close";
-            btnClose.Font = fontButton;
-            btnClose.Location = new Point(230, 395);
-            btnClose.Size = new Size(125, 30);
-            btnClose.FlatStyle = FlatStyle.Flat;
-            btnClose.FlatAppearance.BorderColor = BatteryMonitorContext.Theme.ButtonBorder;
-            btnClose.Cursor = Cursors.Hand;
-            btnClose.Click += (s, e) =>
-            {
-                // Save Outer
-                SaveSelectedDevice(cbOuterDevice, outerConfig, deviceItems, "Outer Ring");
-                // Save Middle
-                SaveSelectedDevice(cbMiddleDevice, middleConfig, deviceItems, "Middle Ring");
-                // Save Inner
-                SaveSelectedDevice(cbInnerDevice, innerConfig, deviceItems, "Inner Ring");
-
-                autoUpdateEnabled = chkUpdate.Checked;
-
-                // Apply + persist theme
-                string newTheme = cbTheme.SelectedIndex == 2 ? "Light" : (cbTheme.SelectedIndex == 1 ? "Dark" : "System");
-                if (newTheme != themeMode)
-                {
-                    themeMode = newTheme;
-                    BatteryMonitorContext.Theme.Apply(themeMode);
-                    settingsForm.BackColor = BatteryMonitorContext.Theme.FormBack;
-                    settingsForm.ForeColor = BatteryMonitorContext.Theme.FormFore;
-                }
-
-                SaveConfiguration();
-
-                // Handle startup checkbox
-                bool exists = File.Exists(shortcutPath);
-                if (chkStartup.Checked && !exists)
-                {
-                    try
-                    {
-                        string currentExe = Application.ExecutablePath;
-                        string workingDir = Path.GetDirectoryName(currentExe);
-                        Type shellType = Type.GetTypeFromProgID("WScript.Shell");
-                        dynamic shell = Activator.CreateInstance(shellType);
-                        dynamic shortcut = shell.CreateShortcut(shortcutPath);
-                        shortcut.TargetPath = currentExe;
-                        shortcut.WorkingDirectory = workingDir;
-                        shortcut.Description = "Universal Headset, Mouse, and Bluetooth Battery Monitor";
-                        shortcut.Save();
-                    }
-                    catch { }
-                }
-                else if (!chkStartup.Checked && exists)
-                {
-                    File.Delete(shortcutPath);
-                }
-
-                UpdateBatteryStatus();
-                settingsForm.Close();
-            };
-            settingsForm.Controls.Add(btnClose);
-
-            settingsForm.ShowDialog();
+            return deviceItems;
         }
 
-        private string GetStatusLabelText(string position, DeviceConfig config, bool connected, int battery, bool transmitterConnected, bool wired)
-        {
-            string txt = "Status: ";
-            if (config.Protocol == "None") txt += "Disabled";
-            else if (connected) txt += "Connected (" + battery + "%)" + (wired ? " [Charging]" : "");
-            else if (transmitterConnected) txt += "Powered Off";
-            else txt += "Disconnected";
-            return txt;
-        }
-
-        private void SaveSelectedDevice(ComboBox cb, DeviceConfig config, List<SettingsDeviceItem> deviceItems, string defaultName)
+        public void SaveSelectedDevice(ComboBox cb, DeviceConfig config, List<SettingsDeviceItem> deviceItems)
         {
             if (cb.SelectedIndex == 0)
             {
@@ -1707,6 +1418,21 @@ namespace BatteryMonitorApp
         private float[] hoverFactors = new float[] { 1f, 1f, 1f };
         private float[] highlightFactors = new float[] { 0f, 0f, 0f };
 
+        // --- In-place settings view state ---
+        public enum FlyoutView { Status, Settings }
+        private FlyoutView currentView = FlyoutView.Status;
+
+        private Panel settingsHost = null;          // holds the settings controls
+        private Button btnStatusRefresh = null;     // status-view buttons (hidden in settings view)
+        private Button btnStatusSettings = null;
+        private ComboBox cbOuterDevice, cbMiddleDevice, cbInnerDevice, cbTheme;
+        private Label lblOuterStatus, lblMiddleStatus, lblInnerStatus;
+        private List<BatteryMonitorContext.SettingsDeviceItem> deviceItems;
+        private string startupShortcutPath;
+
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+        private static extern int SetWindowTheme(IntPtr hWnd, string subAppName, string subAppIdList);
+
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
@@ -1749,6 +1475,7 @@ namespace BatteryMonitorApp
             Font fontIcons = new Font("Segoe MDL2 Assets", 10.5f, FontStyle.Regular);
 
             Button btnRefresh = new Button();
+            btnStatusRefresh = btnRefresh;
             btnRefresh.Text = "\uE72C";
             btnRefresh.Font = fontIcons;
             btnRefresh.Location = new Point(175, formHeight - 41);
@@ -1761,8 +1488,12 @@ namespace BatteryMonitorApp
             btnRefresh.ForeColor = BatteryMonitorContext.Theme.ButtonIdle;
             btnRefresh.Cursor = Cursors.Hand;
             btnRefresh.Click += (s, e) => {
-                context.UpdateBatteryStatus();
-                this.Invalidate();
+                if (currentView == FlyoutView.Status)
+                {
+                    context.UpdateBatteryStatus();
+                    this.Invalidate();
+                    UpdateStatusLabels();
+                }
             };
             btnRefresh.MouseEnter += (s, e) => {
                 btnRefresh.ForeColor = BatteryMonitorContext.Theme.TextPrimary;
@@ -1772,6 +1503,7 @@ namespace BatteryMonitorApp
             this.Controls.Add(btnRefresh);
 
             Button btnSettings = new Button();
+            btnStatusSettings = btnSettings;
             btnSettings.Text = "\uE713";
             btnSettings.Font = fontIcons;
             btnSettings.Location = new Point(210, formHeight - 41);
@@ -1784,7 +1516,10 @@ namespace BatteryMonitorApp
             btnSettings.ForeColor = BatteryMonitorContext.Theme.ButtonIdle;
             btnSettings.Cursor = Cursors.Hand;
             btnSettings.Click += (s, e) => {
-                StartCloseAnimation(() => context.ShowSettingsWindow());
+                if (currentView == FlyoutView.Status)
+                    ShowSettingsView();
+                else
+                    ShowStatusView();
             };
             btnSettings.MouseEnter += (s, e) => {
                 btnSettings.ForeColor = BatteryMonitorContext.Theme.TextPrimary;
@@ -1798,6 +1533,277 @@ namespace BatteryMonitorApp
             animTimer.Interval = 15;
             animTimer.Tick += AnimTimer_Tick;
             animTimer.Start();
+        }
+
+        // ============================================================
+        // IN-PLACE SETTINGS VIEW
+        // ============================================================
+
+        public void ShowStatusView()
+        {
+            currentView = FlyoutView.Status;
+            if (settingsHost != null) settingsHost.Visible = false;
+            btnStatusRefresh.Visible = true;
+            btnStatusSettings.Visible = true;
+            btnStatusSettings.Text = "\uE713"; // gear
+            hoveredIndex = -1;
+            this.Invalidate();
+        }
+
+        public void ShowSettingsView()
+        {
+            if (settingsHost == null) BuildSettingsPanel();
+            currentView = FlyoutView.Settings;
+            settingsHost.Visible = true;
+            settingsHost.BringToFront();
+            btnStatusRefresh.Visible = false;
+            btnStatusSettings.Visible = true;
+            btnStatusSettings.Text = "\uE72B"; // back arrow
+            hoveredIndex = -1;
+            RefreshDeviceScan();
+        }
+
+        private ComboBox MakeCombo(int y)
+        {
+            ComboBox cb = new ComboBox();
+            cb.DropDownStyle = ComboBoxStyle.DropDownList;
+            cb.Font = new Font("Segoe UI", 9f);
+            cb.Location = new Point(15, y);
+            cb.Size = new Size(230, 24);
+            cb.BackColor = BatteryMonitorContext.Theme.ControlBack;
+            cb.ForeColor = BatteryMonitorContext.Theme.FormFore;
+            cb.FlatStyle = FlatStyle.Flat;
+            try { SetWindowTheme(cb.Handle, "DarkMode_Explorer", null); } catch { }
+            return cb;
+        }
+
+        private void UpdateStatusLabels()
+        {
+            if (lblOuterStatus == null) return;
+            lblOuterStatus.Text = context.GetStatusLabelText("Outer", context.outerConfig, context.LastOuterConnected, context.LastOuterBattery, context.LastOuterTransmitterConnected, context.LastOuterWired);
+            lblMiddleStatus.Text = context.GetStatusLabelText("Middle", context.middleConfig, context.LastMiddleConnected, context.LastMiddleBattery, false, context.LastMiddleWired);
+            lblInnerStatus.Text = context.GetStatusLabelText("Inner", context.innerConfig, context.LastInnerConnected, context.LastInnerBattery, false, context.LastInnerWired);
+        }
+
+        private void RefreshDeviceScan()
+        {
+            deviceItems = context.ScanAvailableDevices();
+            PopulateDeviceCombo(cbOuterDevice, context.outerConfig);
+            PopulateDeviceCombo(cbMiddleDevice, context.middleConfig);
+            PopulateDeviceCombo(cbInnerDevice, context.innerConfig);
+            UpdateStatusLabels();
+        }
+
+        private void PopulateDeviceCombo(ComboBox cb, DeviceConfig config)
+        {
+            cb.Items.Clear();
+            cb.Items.Add("[ None / Disabled ]");
+            int selected = 0;
+            for (int i = 0; i < deviceItems.Count; i++)
+            {
+                cb.Items.Add(deviceItems[i].DisplayName);
+                var it = deviceItems[i];
+                if (it.Protocol == "Bluetooth")
+                {
+                    if (config.Protocol == "Bluetooth" && it.DeviceName == config.DeviceName) selected = i + 1;
+                }
+                else
+                {
+                    if (it.Vid == config.Vid && it.Pid == config.Pid && config.Protocol != "Bluetooth" && config.Protocol != "None") selected = i + 1;
+                }
+            }
+            cb.SelectedIndex = selected;
+        }
+
+        private void BuildSettingsPanel()
+        {
+            settingsHost = new Panel();
+            settingsHost.Location = new Point(0, 34);
+            settingsHost.Size = new Size(this.Width, this.Height - 34);
+            settingsHost.BackColor = BatteryMonitorContext.Theme.FlyoutBack;
+            settingsHost.Visible = false;
+
+            Font fontLabel = new Font("Segoe UI", 9f, FontStyle.Bold);
+            Font fontSub = new Font("Segoe UI", 8f, FontStyle.Regular);
+            Font fontButton = new Font("Segoe UI", 9f);
+
+            int W = this.Width; // 260
+
+            Label lblTitle = new Label();
+            lblTitle.Text = "Settings";
+            lblTitle.Font = new Font("Segoe UI", 11f, FontStyle.Bold);
+            lblTitle.ForeColor = BatteryMonitorContext.Theme.FormFore;
+            lblTitle.Location = new Point(15, 8);
+            lblTitle.Size = new Size(200, 24);
+            lblTitle.BackColor = Color.Transparent;
+            settingsHost.Controls.Add(lblTitle);
+
+            int y = 40;
+
+            Func<string, int, Label> MakeSection = (text, yy) =>
+            {
+                Label l = new Label();
+                l.Text = text;
+                l.Font = fontLabel;
+                l.ForeColor = BatteryMonitorContext.Theme.FormFore;
+                l.Location = new Point(15, yy);
+                l.Size = new Size(200, 18);
+                l.BackColor = Color.Transparent;
+                settingsHost.Controls.Add(l);
+                return l;
+            };
+
+            // --- DEVICE RINGS ---
+            lblOuterStatus = new Label(); lblOuterStatus.Font = fontSub; lblOuterStatus.ForeColor = BatteryMonitorContext.Theme.TextMuted; lblOuterStatus.Location = new Point(15, 0); lblOuterStatus.Size = new Size(230, 16); lblOuterStatus.BackColor = Color.Transparent;
+            lblMiddleStatus = new Label(); lblMiddleStatus.Font = fontSub; lblMiddleStatus.ForeColor = BatteryMonitorContext.Theme.TextMuted; lblMiddleStatus.Location = new Point(15, 0); lblMiddleStatus.Size = new Size(230, 16); lblMiddleStatus.BackColor = Color.Transparent;
+            lblInnerStatus = new Label(); lblInnerStatus.Font = fontSub; lblInnerStatus.ForeColor = BatteryMonitorContext.Theme.TextMuted; lblInnerStatus.Location = new Point(15, 0); lblInnerStatus.Size = new Size(230, 16); lblInnerStatus.BackColor = Color.Transparent;
+
+            MakeSection("Outer Ring:", y);
+            cbOuterDevice = MakeCombo(y + 19);
+            settingsHost.Controls.Add(cbOuterDevice);
+            y += 19 + 26;
+            lblOuterStatus.Location = new Point(15, y); settingsHost.Controls.Add(lblOuterStatus);
+            y += 22;
+
+            MakeSection("Middle Ring:", y);
+            cbMiddleDevice = MakeCombo(y + 19);
+            settingsHost.Controls.Add(cbMiddleDevice);
+            y += 19 + 26;
+            lblMiddleStatus.Location = new Point(15, y); settingsHost.Controls.Add(lblMiddleStatus);
+            y += 22;
+
+            MakeSection("Inner Ring:", y);
+            cbInnerDevice = MakeCombo(y + 19);
+            settingsHost.Controls.Add(cbInnerDevice);
+            y += 19 + 26;
+            lblInnerStatus.Location = new Point(15, y); settingsHost.Controls.Add(lblInnerStatus);
+            y += 14;
+
+            // --- DIVIDER ---
+            Label div = new Label();
+            div.BackColor = BatteryMonitorContext.Theme.Divider;
+            div.Location = new Point(15, y);
+            div.Size = new Size(W - 30, 1);
+            settingsHost.Controls.Add(div);
+            y += 12;
+
+            // --- THEME ---
+            MakeSection("Theme:", y);
+            cbTheme = MakeCombo(y + 19);
+            cbTheme.Items.AddRange(new object[] { "System (match Windows)", "Dark", "Light" });
+            if (context.themeMode == "Light") cbTheme.SelectedIndex = 2;
+            else if (context.themeMode == "Dark") cbTheme.SelectedIndex = 1;
+            else cbTheme.SelectedIndex = 0;
+            settingsHost.Controls.Add(cbTheme);
+            y += 19 + 26 + 10;
+
+            // --- CHECKBOXES ---
+            CheckBox chkStartup = new CheckBox();
+            chkStartup.Text = "Run at Windows startup";
+            chkStartup.Font = fontButton;
+            chkStartup.ForeColor = BatteryMonitorContext.Theme.FormFore;
+            chkStartup.Location = new Point(15, y);
+            chkStartup.Size = new Size(230, 22);
+            chkStartup.BackColor = Color.Transparent;
+
+            startupShortcutPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                @"Microsoft\Windows\Start Menu\Programs\Startup\BattStat.lnk");
+            chkStartup.Checked = File.Exists(startupShortcutPath);
+            settingsHost.Controls.Add(chkStartup);
+            y += 26;
+
+            CheckBox chkUpdate = new CheckBox();
+            chkUpdate.Text = "Check for updates on startup";
+            chkUpdate.Font = fontButton;
+            chkUpdate.ForeColor = BatteryMonitorContext.Theme.FormFore;
+            chkUpdate.Location = new Point(15, y);
+            chkUpdate.Size = new Size(230, 22);
+            chkUpdate.BackColor = Color.Transparent;
+            chkUpdate.Checked = context.autoUpdateEnabled;
+            settingsHost.Controls.Add(chkUpdate);
+            y += 32;
+
+            // --- BUTTONS ---
+            Button btnRefreshScan = new Button();
+            btnRefreshScan.Text = "Refresh";
+            btnRefreshScan.Font = fontButton;
+            btnRefreshScan.Location = new Point(15, y);
+            btnRefreshScan.Size = new Size(105, 28);
+            btnRefreshScan.FlatStyle = FlatStyle.Flat;
+            btnRefreshScan.ForeColor = BatteryMonitorContext.Theme.FormFore;
+            btnRefreshScan.BackColor = BatteryMonitorContext.Theme.ControlBack;
+            btnRefreshScan.FlatAppearance.BorderColor = BatteryMonitorContext.Theme.ButtonBorder;
+            btnRefreshScan.Cursor = Cursors.Hand;
+            btnRefreshScan.Click += (s, e) => { context.UpdateBatteryStatus(); RefreshDeviceScan(); };
+            settingsHost.Controls.Add(btnRefreshScan);
+
+            Button btnSave = new Button();
+            btnSave.Text = "Save";
+            btnSave.Font = fontButton;
+            btnSave.Location = new Point(W - 120, y);
+            btnSave.Size = new Size(105, 28);
+            btnSave.FlatStyle = FlatStyle.Flat;
+            btnSave.ForeColor = BatteryMonitorContext.Theme.FormFore;
+            btnSave.BackColor = BatteryMonitorContext.Theme.ControlBack;
+            btnSave.FlatAppearance.BorderColor = BatteryMonitorContext.Theme.ButtonBorder;
+            btnSave.Cursor = Cursors.Hand;
+            btnSave.Click += (s, e) =>
+            {
+                context.SaveSelectedDevice(cbOuterDevice, context.outerConfig, deviceItems);
+                context.SaveSelectedDevice(cbMiddleDevice, context.middleConfig, deviceItems);
+                context.SaveSelectedDevice(cbInnerDevice, context.innerConfig, deviceItems);
+
+                context.autoUpdateEnabled = chkUpdate.Checked;
+
+                string newTheme = cbTheme.SelectedIndex == 2 ? "Light" : (cbTheme.SelectedIndex == 1 ? "Dark" : "System");
+                bool themeChanged = newTheme != context.themeMode;
+                context.themeMode = newTheme;
+                if (themeChanged) BatteryMonitorContext.Theme.Apply(newTheme);
+
+                context.SaveConfiguration();
+
+                // Startup shortcut
+                try
+                {
+                    bool exists = File.Exists(startupShortcutPath);
+                    if (chkStartup.Checked && !exists)
+                    {
+                        string currentExe = Application.ExecutablePath;
+                        Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+                        dynamic shell = Activator.CreateInstance(shellType);
+                        dynamic shortcut = shell.CreateShortcut(startupShortcutPath);
+                        shortcut.TargetPath = currentExe;
+                        shortcut.WorkingDirectory = Path.GetDirectoryName(currentExe);
+                        shortcut.Description = "BattStat - Battery Monitor";
+                        shortcut.Save();
+                    }
+                    else if (!chkStartup.Checked && exists)
+                    {
+                        File.Delete(startupShortcutPath);
+                    }
+                }
+                catch { }
+
+                if (themeChanged)
+                {
+                    // Rebuild this panel with new colors, then repaint
+                    settingsHost.Controls.Clear();
+                    this.Controls.Remove(settingsHost);
+                    settingsHost.Dispose();
+                    settingsHost = null;
+                    BuildSettingsPanel();
+                    settingsHost.Visible = true;
+                    settingsHost.BringToFront();
+                }
+
+                context.UpdateBatteryStatus();
+                UpdateStatusLabels();
+                this.Invalidate();
+            };
+            settingsHost.Controls.Add(btnSave);
+
+            this.Controls.Add(settingsHost);
         }
 
         private void AnimTimer_Tick(object sender, EventArgs e)
@@ -1976,6 +1982,9 @@ namespace BatteryMonitorApp
 
         private void FlyoutForm_Paint(object sender, PaintEventArgs e)
         {
+            // In settings view the controls panel covers everything; skip status painting
+            if (currentView != FlyoutView.Status) return;
+
             Graphics g = e.Graphics;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
