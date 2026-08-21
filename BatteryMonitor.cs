@@ -409,6 +409,90 @@ namespace BatteryMonitorApp
 
         private bool autoUpdateEnabled = true;
 
+        // Theme: "Dark" | "Light" | "System"
+        private string themeMode = "System";
+
+        public static class Theme
+        {
+            // Window / control backgrounds
+            public static Color FormBack = Color.FromArgb(25, 25, 25);
+            public static Color FormFore = Color.White;              // default text
+            public static Color FlyoutBack = Color.FromArgb(28, 28, 28);
+            public static Color ControlBack = Color.FromArgb(50, 50, 50);   // combo boxes
+            public static Color Divider = Color.FromArgb(60, 60, 60);       // settings divider
+            public static Color Border = Color.FromArgb(50, 50, 50);        // flyout border
+            public static Color RowHighlight = Color.FromArgb(38, 38, 38);  // flyout hovered row
+            public static Color ButtonBorder = Color.FromArgb(100, 100, 100);
+            public static Color ButtonIdle = Color.FromArgb(120, 120, 120); // icon buttons at rest
+            public static Color ButtonHover = Color.FromArgb(40, 40, 40);   // hover background
+            public static Color ButtonDown = Color.FromArgb(50, 50, 50);    // pressed background
+            public static Color TextPrimary = Color.White;           // flyout device rows
+            public static Color TextMuted = Color.FromArgb(170, 170, 170);  // flyout title
+            public static Color TextSubtle = Color.FromArgb(90, 90, 90);    // version label
+            public static Color DividerRow = Color.FromArgb(40, 40, 40);    // flyout row dividers
+
+            public static void Apply(string mode)
+            {
+                bool light = mode == "Light" ||
+                             (mode == "System" && IsSystemLight());
+                if (light)
+                {
+                    FormBack = Color.FromArgb(249, 249, 249);
+                    FormFore = Color.FromArgb(20, 20, 20);
+                    FlyoutBack = Color.FromArgb(252, 252, 252);
+                    ControlBack = Color.FromArgb(230, 230, 230);
+                    Divider = Color.FromArgb(210, 210, 210);
+                    Border = Color.FromArgb(205, 205, 205);
+                    RowHighlight = Color.FromArgb(235, 235, 235);
+                    ButtonBorder = Color.FromArgb(160, 160, 160);
+                    ButtonIdle = Color.FromArgb(130, 130, 130);
+                    ButtonHover = Color.FromArgb(225, 225, 225);
+                    ButtonDown = Color.FromArgb(215, 215, 215);
+                    TextPrimary = Color.FromArgb(20, 20, 20);
+                    TextMuted = Color.FromArgb(80, 80, 80);
+                    TextSubtle = Color.FromArgb(150, 150, 150);
+                    DividerRow = Color.FromArgb(225, 225, 225);
+                }
+                else
+                {
+                    FormBack = Color.FromArgb(25, 25, 25);
+                    FormFore = Color.White;
+                    FlyoutBack = Color.FromArgb(28, 28, 28);
+                    ControlBack = Color.FromArgb(50, 50, 50);
+                    Divider = Color.FromArgb(60, 60, 60);
+                    Border = Color.FromArgb(50, 50, 50);
+                    RowHighlight = Color.FromArgb(38, 38, 38);
+                    ButtonBorder = Color.FromArgb(100, 100, 100);
+                    ButtonIdle = Color.FromArgb(120, 120, 120);
+                    ButtonHover = Color.FromArgb(40, 40, 40);
+                    ButtonDown = Color.FromArgb(50, 50, 50);
+                    TextPrimary = Color.White;
+                    TextMuted = Color.FromArgb(170, 170, 170);
+                    TextSubtle = Color.FromArgb(90, 90, 90);
+                    DividerRow = Color.FromArgb(40, 40, 40);
+                }
+            }
+
+            // Reads the Windows personalization setting (AppsUseLightTheme).
+            // Returns true for light mode, false for dark (or on any failure).
+            public static bool IsSystemLight()
+            {
+                try
+                {
+                    using (Microsoft.Win32.RegistryKey key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+                    {
+                        if (key != null)
+                        {
+                            object val = key.GetValue("AppsUseLightTheme");
+                            if (val is int) return ((int)val) == 1;
+                        }
+                    }
+                }
+                catch { }
+                return false; // default to dark if undetectable
+            }
+        }
+
         // Shared state for Settings Form
         public bool LastOuterTransmitterConnected { get; private set; }
         public bool LastOuterConnected { get; private set; }
@@ -435,6 +519,7 @@ namespace BatteryMonitorApp
         {
             // Load custom configurations on startup
             LoadConfiguration();
+            BatteryMonitorContext.Theme.Apply(themeMode);
 
             // Initialize Tray Icon
             notifyIcon = new NotifyIcon();
@@ -531,6 +616,7 @@ namespace BatteryMonitorApp
                     else if (key == "InnerCustomBatteryIndex") innerConfig.CustomBatteryIndex = Convert.ToInt32(val);
                     else if (key == "InnerCustomWiredIndex") innerConfig.CustomWiredIndex = Convert.ToInt32(val);
                     else if (key == "AutoUpdate") autoUpdateEnabled = (val.ToLower() == "true");
+                    else if (key == "Theme") themeMode = val;
                 }
             }
             catch { }
@@ -575,6 +661,7 @@ namespace BatteryMonitorApp
                 lines.Add("InnerCustomBatteryIndex=" + innerConfig.CustomBatteryIndex);
                 lines.Add("InnerCustomWiredIndex=" + innerConfig.CustomWiredIndex);
                 lines.Add("AutoUpdate=" + autoUpdateEnabled.ToString());
+                lines.Add("Theme=" + themeMode);
 
                 File.WriteAllLines(path, lines.ToArray());
             }
@@ -1140,8 +1227,8 @@ namespace BatteryMonitorApp
             settingsForm.FormBorderStyle = FormBorderStyle.FixedDialog;
             settingsForm.MaximizeBox = false;
             settingsForm.MinimizeBox = false;
-            settingsForm.BackColor = Color.FromArgb(25, 25, 25);
-            settingsForm.ForeColor = Color.White;
+            settingsForm.BackColor = BatteryMonitorContext.Theme.FormBack;
+            settingsForm.ForeColor = BatteryMonitorContext.Theme.FormFore;
 
             Font fontTitle = new Font("Segoe UI", 12f, FontStyle.Bold);
             Font fontLabel = new Font("Segoe UI", 9.5f, FontStyle.Bold);
@@ -1220,8 +1307,8 @@ namespace BatteryMonitorApp
             cbOuterDevice.Font = fontLabel;
             cbOuterDevice.Location = new Point(20, 75);
             cbOuterDevice.Size = new Size(345, 25);
-            cbOuterDevice.BackColor = Color.FromArgb(50, 50, 50);
-            cbOuterDevice.ForeColor = Color.White;
+            cbOuterDevice.BackColor = BatteryMonitorContext.Theme.ControlBack;
+            cbOuterDevice.ForeColor = BatteryMonitorContext.Theme.FormFore;
             cbOuterDevice.FlatStyle = FlatStyle.Flat;
             cbOuterDevice.Items.Add("[ None / Disabled ]");
             int selectedOuterIndex = 0;
@@ -1265,8 +1352,8 @@ namespace BatteryMonitorApp
             cbMiddleDevice.Font = fontLabel;
             cbMiddleDevice.Location = new Point(20, 155);
             cbMiddleDevice.Size = new Size(345, 25);
-            cbMiddleDevice.BackColor = Color.FromArgb(50, 50, 50);
-            cbMiddleDevice.ForeColor = Color.White;
+            cbMiddleDevice.BackColor = BatteryMonitorContext.Theme.ControlBack;
+            cbMiddleDevice.ForeColor = BatteryMonitorContext.Theme.FormFore;
             cbMiddleDevice.FlatStyle = FlatStyle.Flat;
             cbMiddleDevice.Items.Add("[ None / Disabled ]");
             int selectedMiddleIndex = 0;
@@ -1310,8 +1397,8 @@ namespace BatteryMonitorApp
             cbInnerDevice.Font = fontLabel;
             cbInnerDevice.Location = new Point(20, 235);
             cbInnerDevice.Size = new Size(345, 25);
-            cbInnerDevice.BackColor = Color.FromArgb(50, 50, 50);
-            cbInnerDevice.ForeColor = Color.White;
+            cbInnerDevice.BackColor = BatteryMonitorContext.Theme.ControlBack;
+            cbInnerDevice.ForeColor = BatteryMonitorContext.Theme.FormFore;
             cbInnerDevice.FlatStyle = FlatStyle.Flat;
             cbInnerDevice.Items.Add("[ None / Disabled ]");
             int selectedInnerIndex = 0;
@@ -1353,10 +1440,32 @@ namespace BatteryMonitorApp
             updateLabels();
 
             Label lblDiv = new Label();
-            lblDiv.BackColor = Color.FromArgb(60, 60, 60);
+            lblDiv.BackColor = BatteryMonitorContext.Theme.Divider;
             lblDiv.Location = new Point(15, 295);
             lblDiv.Size = new Size(340, 1);
             settingsForm.Controls.Add(lblDiv);
+
+            // --- THEME PICKER ---
+            Label lblTheme = new Label();
+            lblTheme.Text = "Theme:";
+            lblTheme.Font = fontLabel;
+            lblTheme.Location = new Point(20, 305);
+            lblTheme.Size = new Size(80, 25);
+            settingsForm.Controls.Add(lblTheme);
+
+            ComboBox cbTheme = new ComboBox();
+            cbTheme.DropDownStyle = ComboBoxStyle.DropDownList;
+            cbTheme.Font = fontLabel;
+            cbTheme.Location = new Point(100, 303);
+            cbTheme.Size = new Size(265, 25);
+            cbTheme.BackColor = BatteryMonitorContext.Theme.ControlBack;
+            cbTheme.ForeColor = BatteryMonitorContext.Theme.FormFore;
+            cbTheme.FlatStyle = FlatStyle.Flat;
+            cbTheme.Items.AddRange(new object[] { "System (match Windows)", "Dark", "Light" });
+            if (themeMode == "Light") cbTheme.SelectedIndex = 2;
+            else if (themeMode == "Dark") cbTheme.SelectedIndex = 1;
+            else cbTheme.SelectedIndex = 0;
+            settingsForm.Controls.Add(cbTheme);
 
             CheckBox chkStartup = new CheckBox();
             chkStartup.Text = "Run application at Windows Startup";
@@ -1372,7 +1481,7 @@ namespace BatteryMonitorApp
             CheckBox chkUpdate = new CheckBox();
             chkUpdate.Text = "Check for updates on startup";
             chkUpdate.Font = fontLabel;
-            chkUpdate.Location = new Point(20, 330);
+            chkUpdate.Location = new Point(20, 363);
             chkUpdate.Size = new Size(340, 25);
             chkUpdate.Checked = autoUpdateEnabled;
             settingsForm.Controls.Add(chkUpdate);
@@ -1381,10 +1490,10 @@ namespace BatteryMonitorApp
             Button btnRefresh = new Button();
             btnRefresh.Text = "Refresh Scan";
             btnRefresh.Font = fontButton;
-            btnRefresh.Location = new Point(20, 365);
+            btnRefresh.Location = new Point(20, 395);
             btnRefresh.Size = new Size(130, 30);
             btnRefresh.FlatStyle = FlatStyle.Flat;
-            btnRefresh.FlatAppearance.BorderColor = Color.FromArgb(100, 100, 100);
+            btnRefresh.FlatAppearance.BorderColor = BatteryMonitorContext.Theme.ButtonBorder;
             btnRefresh.Cursor = Cursors.Hand;
             btnRefresh.Click += (s, e) =>
             {
@@ -1396,10 +1505,10 @@ namespace BatteryMonitorApp
             Button btnClose = new Button();
             btnClose.Text = "Save & Close";
             btnClose.Font = fontButton;
-            btnClose.Location = new Point(230, 365);
+            btnClose.Location = new Point(230, 395);
             btnClose.Size = new Size(125, 30);
             btnClose.FlatStyle = FlatStyle.Flat;
-            btnClose.FlatAppearance.BorderColor = Color.FromArgb(100, 100, 100);
+            btnClose.FlatAppearance.BorderColor = BatteryMonitorContext.Theme.ButtonBorder;
             btnClose.Cursor = Cursors.Hand;
             btnClose.Click += (s, e) =>
             {
@@ -1411,6 +1520,16 @@ namespace BatteryMonitorApp
                 SaveSelectedDevice(cbInnerDevice, innerConfig, deviceItems, "Inner Ring");
 
                 autoUpdateEnabled = chkUpdate.Checked;
+
+                // Apply + persist theme
+                string newTheme = cbTheme.SelectedIndex == 2 ? "Light" : (cbTheme.SelectedIndex == 1 ? "Dark" : "System");
+                if (newTheme != themeMode)
+                {
+                    themeMode = newTheme;
+                    BatteryMonitorContext.Theme.Apply(themeMode);
+                    settingsForm.BackColor = BatteryMonitorContext.Theme.FormBack;
+                    settingsForm.ForeColor = BatteryMonitorContext.Theme.FormFore;
+                }
 
                 SaveConfiguration();
 
@@ -1605,7 +1724,7 @@ namespace BatteryMonitorApp
             int formHeight = 440 - ((3 - activeCount) * 45);
             this.Size = new Size(260, formHeight);
             this.FormBorderStyle = FormBorderStyle.None;
-            this.BackColor = Color.FromArgb(28, 28, 28); // Dark charcoal background
+            this.BackColor = BatteryMonitorContext.Theme.FlyoutBack; // themed background
             this.ShowInTaskbar = false;
             this.TopMost = true;
             this.StartPosition = FormStartPosition.Manual;
@@ -1636,20 +1755,20 @@ namespace BatteryMonitorApp
             btnRefresh.Size = new Size(32, 32);
             btnRefresh.FlatStyle = FlatStyle.Flat;
             btnRefresh.FlatAppearance.BorderSize = 0;
-            btnRefresh.FlatAppearance.MouseOverBackColor = Color.FromArgb(40, 40, 40);
-            btnRefresh.FlatAppearance.MouseDownBackColor = Color.FromArgb(50, 50, 50);
+            btnRefresh.FlatAppearance.MouseOverBackColor = BatteryMonitorContext.Theme.ButtonHover;
+            btnRefresh.FlatAppearance.MouseDownBackColor = BatteryMonitorContext.Theme.ButtonDown;
             btnRefresh.BackColor = Color.Transparent;
-            btnRefresh.ForeColor = Color.FromArgb(120, 120, 120);
+            btnRefresh.ForeColor = BatteryMonitorContext.Theme.ButtonIdle;
             btnRefresh.Cursor = Cursors.Hand;
             btnRefresh.Click += (s, e) => {
                 context.UpdateBatteryStatus();
                 this.Invalidate();
             };
             btnRefresh.MouseEnter += (s, e) => {
-                btnRefresh.ForeColor = Color.White;
+                btnRefresh.ForeColor = BatteryMonitorContext.Theme.TextPrimary;
                 this.hoveredIndex = -1; // Clear ring/row highlights when buttons are hovered
             };
-            btnRefresh.MouseLeave += (s, e) => btnRefresh.ForeColor = Color.FromArgb(120, 120, 120);
+            btnRefresh.MouseLeave += (s, e) => btnRefresh.ForeColor = BatteryMonitorContext.Theme.ButtonIdle;
             this.Controls.Add(btnRefresh);
 
             Button btnSettings = new Button();
@@ -1659,19 +1778,19 @@ namespace BatteryMonitorApp
             btnSettings.Size = new Size(32, 32);
             btnSettings.FlatStyle = FlatStyle.Flat;
             btnSettings.FlatAppearance.BorderSize = 0;
-            btnSettings.FlatAppearance.MouseOverBackColor = Color.FromArgb(40, 40, 40);
-            btnSettings.FlatAppearance.MouseDownBackColor = Color.FromArgb(50, 50, 50);
+            btnSettings.FlatAppearance.MouseOverBackColor = BatteryMonitorContext.Theme.ButtonHover;
+            btnSettings.FlatAppearance.MouseDownBackColor = BatteryMonitorContext.Theme.ButtonDown;
             btnSettings.BackColor = Color.Transparent;
-            btnSettings.ForeColor = Color.FromArgb(120, 120, 120);
+            btnSettings.ForeColor = BatteryMonitorContext.Theme.ButtonIdle;
             btnSettings.Cursor = Cursors.Hand;
             btnSettings.Click += (s, e) => {
                 StartCloseAnimation(() => context.ShowSettingsWindow());
             };
             btnSettings.MouseEnter += (s, e) => {
-                btnSettings.ForeColor = Color.White;
+                btnSettings.ForeColor = BatteryMonitorContext.Theme.TextPrimary;
                 this.hoveredIndex = -1; // Clear ring/row highlights when buttons are hovered
             };
-            btnSettings.MouseLeave += (s, e) => btnSettings.ForeColor = Color.FromArgb(120, 120, 120);
+            btnSettings.MouseLeave += (s, e) => btnSettings.ForeColor = BatteryMonitorContext.Theme.ButtonIdle;
             this.Controls.Add(btnSettings);
 
             // Configure animation timer
@@ -1861,7 +1980,7 @@ namespace BatteryMonitorApp
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
             // Draw border
-            using (Pen borderPen = new Pen(Color.FromArgb(50, 50, 50), 1))
+            using (Pen borderPen = new Pen(BatteryMonitorContext.Theme.Border, 1))
             {
                 g.DrawRectangle(borderPen, 0, 0, this.Width - 1, this.Height - 1);
             }
@@ -1870,12 +1989,12 @@ namespace BatteryMonitorApp
             Font fontTitle = new Font("Segoe UI", 10f, FontStyle.Regular);
             Font fontVersion = new Font("Segoe UI", 8.5f, FontStyle.Regular);
 
-            using (Brush titleBrush = new SolidBrush(Color.FromArgb(170, 170, 170)))
+            using (Brush titleBrush = new SolidBrush(BatteryMonitorContext.Theme.TextMuted))
             {
                 g.DrawString("BattStat", fontTitle, titleBrush, 20, 14);
             }
 
-            using (Brush verBrush = new SolidBrush(Color.FromArgb(90, 90, 90)))
+            using (Brush verBrush = new SolidBrush(BatteryMonitorContext.Theme.TextSubtle))
             {
                 using (StringFormat sf = new StringFormat())
                 {
@@ -1918,7 +2037,7 @@ namespace BatteryMonitorApp
 
             // --- DIVIDERS & ROWS ---
             int startY = 255;
-            using (Pen divPen = new Pen(Color.FromArgb(40, 40, 40), 1))
+            using (Pen divPen = new Pen(BatteryMonitorContext.Theme.DividerRow, 1))
             {
                 g.DrawLine(divPen, 0, startY, this.Width, startY);
                 
@@ -1965,7 +2084,7 @@ namespace BatteryMonitorApp
             if (highlightFactor <= 0f) return;
             int alpha = (int)(255 * highlightFactor);
             if (alpha > 255) alpha = 255;
-            using (Brush hoverBrush = new SolidBrush(Color.FromArgb(alpha, 38, 38, 38)))
+            using (Brush hoverBrush = new SolidBrush(Color.FromArgb(alpha, BatteryMonitorContext.Theme.RowHighlight)))
             {
                 g.FillRectangle(hoverBrush, 1, yStart + 1, this.Width - 2, 43);
             }
@@ -2016,7 +2135,7 @@ namespace BatteryMonitorApp
 
             // Draw colored indicator dot (smoothly fades with hoverFactor)
             int dotAlpha = (int)(80 + (hoverFactor - 0.25f) / 0.75f * 175);
-            Color dotColor = connected ? Color.FromArgb(dotAlpha, themeColor) : Color.FromArgb(dotAlpha, 80, 80, 80);
+            Color dotColor = connected ? Color.FromArgb(dotAlpha, themeColor) : Color.FromArgb(dotAlpha, BatteryMonitorContext.Theme.TextSubtle);
             using (Brush dotBrush = new SolidBrush(dotColor))
             {
                 g.FillEllipse(dotBrush, 24, yCenter - 4, 8, 8);
@@ -2043,7 +2162,7 @@ namespace BatteryMonitorApp
             if (statusAlpha < 0) statusAlpha = 0;
 
             // Draw label text
-            using (Brush textBrush = new SolidBrush(Color.FromArgb(textAlpha, 255, 255, 255)))
+            using (Brush textBrush = new SolidBrush(Color.FromArgb(textAlpha, BatteryMonitorContext.Theme.TextPrimary)))
             {
                 g.DrawString(displayLabel, fontLabel, textBrush, 45, yCenter - 9);
             }
@@ -2055,7 +2174,7 @@ namespace BatteryMonitorApp
                 statusText += " (Charging)";
             }
 
-            using (Brush statusBrush = new SolidBrush(Color.FromArgb(statusAlpha, 255, 255, 255)))
+            using (Brush statusBrush = new SolidBrush(Color.FromArgb(statusAlpha, BatteryMonitorContext.Theme.TextPrimary)))
             {
                 using (StringFormat sf = new StringFormat())
                 {
