@@ -17,8 +17,8 @@ using System.Text.RegularExpressions;
 [assembly: AssemblyCopyright("Copyright © 2026")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("1.2.1.0")]
-[assembly: AssemblyFileVersion("1.2.1.0")]
+[assembly: AssemblyVersion("1.2.3.0")]
+[assembly: AssemblyFileVersion("1.2.3.0")]
 
 namespace BatteryMonitorApp
 {
@@ -869,6 +869,8 @@ namespace BatteryMonitorApp
             {
                 warned10 = false;
                 warned25 = false;
+                warnedHealth = false;
+                history.Clear();
                 return;
             }
 
@@ -1522,10 +1524,18 @@ namespace BatteryMonitorApp
 
         private ToolStripMenuItem updateMenuItem;
 
+        // Single source of truth for the app version (from the assembly attributes)
+        public static string AppVersion
+        {
+            get { return Assembly.GetExecutingAssembly().GetName().Version.ToString(3); }
+        }
+
         private void CheckForUpdates()
         {
             try
             {
+                // Ensure TLS 1.2+ is available (required by api.github.com; older .NET Framework defaults don't enable it)
+                ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
                 using (WebClient wc = new WebClient())
                 {
                     wc.Headers.Add("User-Agent", "BattStat-Update-Checker");
@@ -1535,7 +1545,7 @@ namespace BatteryMonitorApp
                     {
                         string latestVersionStr = m.Groups[1].Value;
                         Version latest = new Version(latestVersionStr);
-                        Version current = new Version("1.2.3"); 
+                        Version current = new Version(AppVersion);
                         
                         if (latest > current)
                         {
@@ -1600,7 +1610,7 @@ namespace BatteryMonitorApp
             // Enable double buffering to prevent flickering during hover transitions
             this.DoubleBuffered = true;
 
-            this.Text = "BattStat v1.2.3";
+            this.Text = "BattStat v" + BatteryMonitorContext.AppVersion;
             int activeCount = (context.outerConfig.Protocol != "None" ? 1 : 0) + (context.middleConfig.Protocol != "None" ? 1 : 0) + (context.innerConfig.Protocol != "None" ? 1 : 0);
             int formHeight = 440 - ((3 - activeCount) * 45);
             this.Size = new Size(260, formHeight);
@@ -1880,7 +1890,7 @@ namespace BatteryMonitorApp
                 using (StringFormat sf = new StringFormat())
                 {
                     sf.Alignment = StringAlignment.Far;
-                    g.DrawString("v1.2.3", fontVersion, verBrush, new RectangleF(150, 16, 90, 20), sf);
+                    g.DrawString("v" + BatteryMonitorContext.AppVersion, fontVersion, verBrush, new RectangleF(150, 16, 90, 20), sf);
                 }
             }
 
