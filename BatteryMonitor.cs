@@ -12,7 +12,7 @@ using System.Text.RegularExpressions;
 [assembly: AssemblyTitle("Arctis & VGN Battery Monitor")]
 [assembly: AssemblyDescription("Lightweight tray battery monitor")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("Antigravity")]
+[assembly: AssemblyCompany("ralphsaniatan")]
 [assembly: AssemblyProduct("Battery Monitor")]
 [assembly: AssemblyCopyright("Copyright © 2026")]
 [assembly: AssemblyTrademark("")]
