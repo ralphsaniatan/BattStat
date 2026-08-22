@@ -17,8 +17,8 @@ using System.Text.RegularExpressions;
 [assembly: AssemblyCopyright("Copyright © 2026")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("1.2.1.0")]
-[assembly: AssemblyFileVersion("1.2.1.0")]
+[assembly: AssemblyVersion("1.2.3.0")]
+[assembly: AssemblyFileVersion("1.2.3.0")]
 
 namespace BatteryMonitorApp
 {
@@ -794,7 +794,7 @@ namespace BatteryMonitorApp
                                 {
                                     if (ReadFile(hDevice, readBuf, (uint)readBuf.Length, out read, IntPtr.Zero))
                                     {
-                                        battery = readBuf[2];
+                                        battery = ClampBattery(readBuf[2]);
                                         return true;
                                     }
                                 }
@@ -804,19 +804,21 @@ namespace BatteryMonitorApp
                 }
                 else if (config.Protocol == "VGN")
                 {
-                    byte[] writeBuf = new byte[17];
+                    // HID writes must match the device's actual output report length
+                    int outLen = dev.OutLength > 0 ? dev.OutLength : 17;
+                    byte[] writeBuf = new byte[outLen];
                     writeBuf[0] = 8;
                     writeBuf[1] = 4;
-                    writeBuf[16] = 73;
+                    writeBuf[outLen - 1] = 73;
 
                     uint written;
                     if (WriteFile(hDevice, writeBuf, (uint)writeBuf.Length, out written, IntPtr.Zero))
                     {
                         byte[] readBuf = new byte[17];
                         uint read;
-                        if (ReadFile(hDevice, readBuf, (uint)readBuf.Length, out read, IntPtr.Zero))
+                        if (ReadFile(hDevice, readBuf, (uint)readBuf.Length, out read, IntPtr.Zero) && read >= 8)
                         {
-                            battery = readBuf[6];
+                            battery = ClampBattery(readBuf[6]);
                             wired = (readBuf[7] == 1);
                             return true;
                         }
@@ -844,7 +846,7 @@ namespace BatteryMonitorApp
                         {
                             if (config.CustomBatteryIndex >= 0 && config.CustomBatteryIndex < readBuf.Length)
                             {
-                                battery = readBuf[config.CustomBatteryIndex];
+                                battery = ClampBattery(readBuf[config.CustomBatteryIndex]);
                                 if (config.CustomWiredIndex >= 0 && config.CustomWiredIndex < readBuf.Length)
                                 {
                                     wired = (readBuf[config.CustomWiredIndex] == 1);
@@ -863,12 +865,21 @@ namespace BatteryMonitorApp
             return false;
         }
 
+        // Reject implausible battery readings (garbage 0xFF bytes etc.)
+        private static int ClampBattery(int raw)
+        {
+            if (raw < 0 || raw > 100) return -1; // treated as "no data" by callers
+            return raw;
+        }
+
         private void RunBatteryWarnings(string label, bool connected, int battery, ref bool warned10, ref bool warned25, ref bool warnedHealth, List<BatteryHistoryEntry> history)
         {
             if (!connected || battery < 0)
             {
                 warned10 = false;
                 warned25 = false;
+                warnedHealth = false; // re-arm rapid-drain detection after reconnect
+                history.Clear();      // stale samples from before disconnect skew the drain window
                 return;
             }
 
@@ -899,14 +910,16 @@ namespace BatteryMonitorApp
                 warnedHealth = false;
             }
 
-            // Low battery checks
+            // Low battery checks.
+            // warned10 stays latched once fired (until level recovers above 25%) so an
+            // oscillating 10/11% gauge cannot re-fire the critical balloon every poll.
             if (battery <= 10)
             {
                 if (!warned10)
                 {
                     warned10 = true;
                     warned25 = true;
-                    ShowNotification(label + " Device Critical", "Battery level is at " + battery + "%. Please charge.", ToolTipIcon.Warning);
+                    ShowNotification(label + " Device Critical", "Battery level is at " + battery + "%. Please charge.", ToolTipIcon.Error);
                 }
             }
             else if (battery <= 25)
@@ -914,9 +927,10 @@ namespace BatteryMonitorApp
                 if (!warned25)
                 {
                     warned25 = true;
-                    ShowNotification(label + " Device Low", "Battery level is at " + battery + "%.", ToolTipIcon.Info);
+                    ShowNotification(label + " Device Low", "Battery level is at " + battery + "%.", ToolTipIcon.Warning);
                 }
-                warned10 = false;
+                // NOTE: do not reset warned10 here — see oscillation comment above.
+                // It clears only when the level recovers above 25%.
             }
             else
             {
@@ -1079,7 +1093,9 @@ namespace BatteryMonitorApp
         {
             try
             {
-                notifyIcon.ShowBalloonTip(5000, title, text, iconType);
+                // Windows silently drops balloons when Focus Assist / Quiet Hours is on,
+                // or notifications for this app are disabled in Settings.
+                notifyIcon.ShowBalloonTip(8000, title, text, iconType);
             }
             catch { }
         }
@@ -1529,29 +1545,40 @@ namespace BatteryMonitorApp
                 using (WebClient wc = new WebClient())
                 {
                     wc.Headers.Add("User-Agent", "BattStat-Update-Checker");
-                    string json = wc.DownloadString("https://api.github.com/repos/ralphsaniatan/BattStat/releases/latest");
-                    Match m = Regex.Match(json, "\"tag_name\"\\s*:\\s*\"v?([0-9\\.]+)\"");
-                    if (m.Success)
+                    // Don't park a thread indefinitely on a stalled connection
+                    wc.DownloadStringCompleted += (s, e) =>
                     {
-                        string latestVersionStr = m.Groups[1].Value;
-                        Version latest = new Version(latestVersionStr);
-                        Version current = new Version("1.2.3"); 
-                        
-                        if (latest > current)
+                        if (e.Error != null || e.Cancelled || string.IsNullOrEmpty(e.Result)) return;
+                        try
                         {
-                            Action updateUI = () => {
-                                updateMenuItem.Text = "Update Available! (v" + latestVersionStr + ")";
-                                updateMenuItem.Visible = true;
-                                updateMenuItem.Font = new Font(updateMenuItem.Font, FontStyle.Bold);
-                                ShowNotification("Update Available", "BattStat v" + latestVersionStr + " is available! Right-click the tray icon to download.", ToolTipIcon.Info);
-                            };
+                            Match m = Regex.Match(e.Result, "\"tag_name\"\\s*:\\s*\"v?([0-9\\.]+)\"");
+                            if (!m.Success) return;
 
-                            if (contextMenu.InvokeRequired)
-                                contextMenu.Invoke(updateUI);
-                            else
-                                updateUI();
+                            string latestVersionStr = m.Groups[1].Value;
+                            Version latest = new Version(latestVersionStr);
+                            Version current = Assembly.GetExecutingAssembly().GetName().Version;
+
+                            if (latest > current)
+                            {
+                                if (contextMenu.IsDisposed) return; // app shutting down
+                                Action updateUI = () => {
+                                    updateMenuItem.Text = "Update Available! (v" + latestVersionStr + ")";
+                                    updateMenuItem.Visible = true;
+                                    Font old = updateMenuItem.Font;
+                                    updateMenuItem.Font = new Font(updateMenuItem.Font, FontStyle.Bold);
+                                    if (old != null) old.Dispose();
+                                    ShowNotification("Update Available", "BattStat v" + latestVersionStr + " is available! Right-click the tray icon to download.", ToolTipIcon.Info);
+                                };
+
+                                if (contextMenu.InvokeRequired)
+                                    contextMenu.BeginInvoke(updateUI); // don't block; avoid deadlock on exit
+                                else
+                                    updateUI();
+                            }
                         }
-                    }
+                        catch { }
+                    };
+                    wc.DownloadStringAsync(new Uri("https://api.github.com/repos/ralphsaniatan/BattStat/releases/latest"));
                 }
             }
             catch { /* Ignore network errors */ }
@@ -1559,6 +1586,22 @@ namespace BatteryMonitorApp
 
         public void ExitApplication()
         {
+            // Close any modal dialog first — Application.Exit() cannot unwind a
+            // nested ShowDialog() message loop, which would leave a zombie process
+            // holding the single-instance mutex.
+            if (settingsForm != null && !settingsForm.IsDisposed)
+            {
+                settingsForm.Close();
+                settingsForm.Dispose();
+                settingsForm = null;
+            }
+            if (activeFlyout != null && !activeFlyout.IsDisposed)
+            {
+                activeFlyout.Close();
+                activeFlyout.Dispose();
+                activeFlyout = null;
+            }
+
             timer.Stop();
             timer.Dispose();
             notifyIcon.Visible = false;
@@ -1867,20 +1910,20 @@ namespace BatteryMonitorApp
             }
 
             // --- HEADER ---
-            Font fontTitle = new Font("Segoe UI", 10f, FontStyle.Regular);
-            Font fontVersion = new Font("Segoe UI", 8.5f, FontStyle.Regular);
-
+            using (Font fontTitle = new Font("Segoe UI", 10f, FontStyle.Regular))
+            using (Font fontVersion = new Font("Segoe UI", 8.5f, FontStyle.Regular))
             using (Brush titleBrush = new SolidBrush(Color.FromArgb(170, 170, 170)))
             {
                 g.DrawString("BattStat", fontTitle, titleBrush, 20, 14);
             }
 
+            using (Font fontVersion2 = new Font("Segoe UI", 8.5f, FontStyle.Regular))
             using (Brush verBrush = new SolidBrush(Color.FromArgb(90, 90, 90)))
             {
                 using (StringFormat sf = new StringFormat())
                 {
                     sf.Alignment = StringAlignment.Far;
-                    g.DrawString("v1.2.3", fontVersion, verBrush, new RectangleF(150, 16, 90, 20), sf);
+                    g.DrawString("v1.2.3", fontVersion2, verBrush, new RectangleF(150, 16, 90, 20), sf);
                 }
             }
 
@@ -2009,9 +2052,9 @@ namespace BatteryMonitorApp
 
         private void DrawDeviceRow(Graphics g, int yStart, string label, bool connected, int battery, Color themeColor, bool wired, float hoverFactor, float highlightFactor)
         {
-            Font fontLabel = new Font("Segoe UI", 9.5f, FontStyle.Regular);
-            Font fontStatus = new Font("Segoe UI", 9f, FontStyle.Regular);
-
+            using (Font fontLabel = new Font("Segoe UI", 9.5f, FontStyle.Regular))
+            using (Font fontStatus = new Font("Segoe UI", 9f, FontStyle.Regular))
+            {
             int yCenter = yStart + 22;
 
             // Draw colored indicator dot (smoothly fades with hoverFactor)
@@ -2062,6 +2105,7 @@ namespace BatteryMonitorApp
                     sf.Alignment = StringAlignment.Far; // Right aligned
                     g.DrawString(statusText, fontStatus, statusBrush, new RectangleF(110, yCenter - 8, 130, 20), sf);
                 }
+            }
             }
         }
     }
