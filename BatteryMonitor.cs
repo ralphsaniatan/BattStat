@@ -882,7 +882,6 @@ namespace BatteryMonitorApp
                 history.Clear();      // stale samples from before disconnect skew the drain window
                 return;
             }
-
             DateTime now = DateTime.Now;
             history.Add(new BatteryHistoryEntry(now, battery));
             history.RemoveAll(x => x.Time < now.AddMinutes(-70));
@@ -911,23 +910,35 @@ namespace BatteryMonitorApp
             }
 
             // Low battery checks.
-            // warned10 stays latched once fired (until level recovers above 25%) so an
-            // oscillating 10/11% gauge cannot re-fire the critical balloon every poll.
+            // warned10/warned25 stay latched once fired (until level recovers above 25%) so an
+            // oscillating gauge cannot re-fire notifications every poll.
             if (battery <= 10)
             {
                 if (!warned10)
                 {
                     warned10 = true;
                     warned25 = true;
+                    ShowLowBatteryNotification(label, battery, true);
                     ShowNotification(label + " Device Critical", "Battery level is at " + battery + "%. Please charge.", ToolTipIcon.Error);
                 }
+            }
+            else if (battery <= 15)
+            {
+                // low-battery toast fires at 15% and below (but above the critical 10%)
+                if (!warned25)
+                {
+                    warned25 = true;
+                    ShowLowBatteryNotification(label, battery, false);
+                }
+                // NOTE: do not reset warned10 here — see oscillation comment above.
+                // It clears only when the level recovers above 25%.
             }
             else if (battery <= 25)
             {
                 if (!warned25)
                 {
                     warned25 = true;
-                    ShowNotification(label + " Device Low", "Battery level is at " + battery + "%.", ToolTipIcon.Warning);
+                    ShowLowBatteryNotification(label, battery, false);
                 }
                 // NOTE: do not reset warned10 here — see oscillation comment above.
                 // It clears only when the level recovers above 25%.
@@ -1098,6 +1109,57 @@ namespace BatteryMonitorApp
                 notifyIcon.ShowBalloonTip(8000, title, text, iconType);
             }
             catch { }
+        }
+
+        private BatteryToast activeToast = null;
+
+        // Distinct synthesized alert: critical = urgent double-beep, low = soft single chime.
+        // Played directly (Console.Beep) so it sounds even in Do Not Disturb mode.
+        private void PlayAlertSound(bool critical)
+        {
+            try
+            {
+                if (critical)
+                {
+                    // urgent descending pair
+                    Console.Beep(880, 180);
+                    Console.Beep(660, 260);
+                }
+                else
+                {
+                    // gentle single tone
+                    Console.Beep(740, 220);
+                }
+            }
+            catch { }
+        }
+
+        // Custom in-app toast for low/critical battery warnings: no banner title,
+        // simple text, blinking warning icon, close button. Not affected by
+        // Focus Assist / Do Not Disturb because it is our own window.
+        public void ShowLowBatteryNotification(string deviceLabel, int level, bool critical)
+        {
+            // Truncate long device names so the toast stays one clean line
+            const int maxName = 16;
+            string name = deviceLabel;
+            if (name.Length > maxName) name = name.Substring(0, maxName - 1).TrimEnd() + "\u2026"; // ellipsis
+
+            string msg = name + ": " + level + "%";
+
+            bool existing = activeToast != null && !activeToast.IsDisposed;
+            if (existing)
+            {
+                activeToast.UpdateMessage(msg);
+                activeToast.Critical = critical;
+                activeToast.Invalidate();
+            }
+            else
+            {
+                activeToast = new BatteryToast(msg);
+                activeToast.Critical = critical;
+                activeToast.Show();
+                PlayAlertSound(critical);
+            }
         }
 
         private string GetProtocolForDevice(ushort vid, string productName)
@@ -1616,6 +1678,154 @@ namespace BatteryMonitorApp
             Application.Exit();
         }
     }
+    // Custom low-battery toast: no banner title, simple message, blinking
+    // warning icon, close button. Own window => unaffected by Focus Assist/DND.
+    public class BatteryToast : Form
+    {
+        private Timer blinkTimer;
+        private bool blinkOn = true;
+        private string message;
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+        public BatteryToast(string msg)
+        {
+            message = msg;
+
+            this.FormBorderStyle = FormBorderStyle.None;
+            this.ShowInTaskbar = false;
+            this.TopMost = true;
+            this.StartPosition = FormStartPosition.Manual;
+            this.BackColor = Color.FromArgb(28, 28, 28);
+            SizeForMessage();
+
+            Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+            this.Location = new Point(wa.Right - this.Width - 12, wa.Bottom - this.Height - 12);
+
+            try
+            {
+                int attribute = 33; // DWMWA_WINDOW_CORNER_PREFERENCE
+                int preference = 2; // round corners
+                DwmSetWindowAttribute(this.Handle, attribute, ref preference, sizeof(int));
+            }
+            catch { }
+
+            Button btnClose = new Button();
+            btnClose.Text = "\u2715";
+            btnClose.Font = new Font("Segoe UI", 9f);
+            btnClose.Size = new Size(26, 24);
+            btnClose.Location = new Point(this.Width - 30, 4);
+            btnClose.FlatStyle = FlatStyle.Flat;
+            btnClose.FlatAppearance.BorderSize = 0;
+            btnClose.ForeColor = Color.FromArgb(150, 150, 155);
+            btnClose.Cursor = Cursors.Hand;
+            btnClose.Click += (s, e) => this.Close();
+            this.Controls.Add(btnClose);
+
+            this.Paint += BatteryToast_Paint;
+
+            blinkTimer = new Timer();
+            blinkTimer.Interval = 1100;
+            blinkTimer.Tick += (s, e) =>
+            {
+                blinkOn = !blinkOn;
+                this.Invalidate(new Rectangle(10, 10, 44, 44));
+            };
+            blinkTimer.Start();
+
+            Timer autoClose = new Timer();
+            autoClose.Interval = 15000;
+            autoClose.Tick += (s, e) =>
+            {
+                autoClose.Stop();
+                this.Close();
+            };
+            autoClose.Start();
+        }
+
+        public void UpdateMessage(string msg)
+        {
+            message = msg;
+            blinkOn = true;
+            SizeForMessage();
+            PositionBottomRight();
+            this.Invalidate();
+        }
+
+        // Fixed compact size — message must be kept short by the caller
+        private void SizeForMessage()
+        {
+            this.Size = new Size(280, 48);
+        }
+
+        private void PositionBottomRight()
+        {
+            Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+            this.Location = new Point(wa.Right - this.Width - 12, wa.Bottom - this.Height - 12);
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            if (blinkTimer != null)
+            {
+                blinkTimer.Stop();
+                blinkTimer.Dispose();
+                blinkTimer = null;
+            }
+            base.OnFormClosed(e);
+        }
+
+        private void BatteryToast_Paint(object sender, PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            using (Pen p = new Pen(Color.FromArgb(55, 55, 58), 1))
+                g.DrawRectangle(p, 0, 0, this.Width - 1, this.Height - 1);
+
+            // measure text first so icon + text share one true centerline
+            using (Font f = new Font("Segoe UI", 11.5f))
+            using (SolidBrush tb = new SolidBrush(Color.FromArgb(230, 230, 235)))
+            {
+                SizeF ts = g.MeasureString(message, f);
+                float midY = this.Height / 2f;
+
+                float ty = midY - ts.Height / 2f;
+                if (ty < 8) ty = 8;
+                g.DrawString(message, f, tb, new RectangleF(42, ty, this.Width - 78, this.Height - 10));
+
+                // blinking warning triangle, centered on the same midline
+                int iw = 14, ih = 12;
+                int ix = 18;
+                float fy = midY - ih / 2f;
+                Point top = new Point(ix + iw / 2, (int)fy);
+                Point bl = new Point(ix, (int)fy + ih);
+                Point br = new Point(ix + iw, (int)fy + ih);
+                Color cOn = critical ? Color.FromArgb(255, 90, 70) : Color.FromArgb(255, 176, 32);
+                Color cOff = critical ? Color.FromArgb(110, 55, 45) : Color.FromArgb(115, 82, 22);
+                using (System.Drawing.Drawing2D.GraphicsPath tri = new System.Drawing.Drawing2D.GraphicsPath())
+                {
+                    tri.AddPolygon(new Point[] { top, bl, br });
+                    using (SolidBrush b = new SolidBrush(blinkOn ? cOn : cOff))
+                        g.FillPath(b, tri);
+                }
+                using (Pen pm = new Pen(Color.Black, 0.9f))
+                {
+                    g.DrawLine(pm, ix + iw / 2f, fy + 1.8f, ix + iw / 2f, fy + 3.8f);
+                }
+                g.FillEllipse(Brushes.Black, ix + iw / 2f - 0.4f, fy + 4.4f, 0.9f, 0.9f);
+            }
+        }
+
+        private bool critical = true;
+        public bool Critical
+        {
+            get { return critical; }
+            set { critical = value; }
+        }
+    }
+
     public class FlyoutForm : Form
     {
         private BatteryMonitorContext context;
