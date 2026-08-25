@@ -9,16 +9,16 @@ using System.Net;
 using System.Threading.Tasks;
 using System.Text.RegularExpressions;
 
-[assembly: AssemblyTitle("Arctis & VGN Battery Monitor")]
+[assembly: AssemblyTitle("BattStat")]
 [assembly: AssemblyDescription("Lightweight tray battery monitor")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("Antigravity")]
-[assembly: AssemblyProduct("Battery Monitor")]
+[assembly: AssemblyCompany("ralphsaniatan")]
+[assembly: AssemblyProduct("BattStat")]
 [assembly: AssemblyCopyright("Copyright © 2026")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
-[assembly: AssemblyVersion("1.2.3.0")]
-[assembly: AssemblyFileVersion("1.2.3.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace BatteryMonitorApp
 {
@@ -407,7 +407,7 @@ namespace BatteryMonitorApp
         public DeviceConfig middleConfig = new DeviceConfig(0x3554, 0xF503, 0xFF02, "VGN");
         public DeviceConfig innerConfig = new DeviceConfig(0, 0, 0, "None");
 
-        private bool autoUpdateEnabled = true;
+        public bool autoUpdateEnabled = true;
 
         // Shared state for Settings Form
         public bool LastOuterTransmitterConnected { get; private set; }
@@ -438,7 +438,7 @@ namespace BatteryMonitorApp
 
             // Initialize Tray Icon
             notifyIcon = new NotifyIcon();
-            notifyIcon.Text = "Battery Monitor";
+            notifyIcon.Text = "BattStat";
             notifyIcon.Visible = true;
             notifyIcon.MouseClick += (s, e) =>
             {
@@ -536,7 +536,7 @@ namespace BatteryMonitorApp
             catch { }
         }
 
-        private void SaveConfiguration()
+        public void SaveConfiguration()
         {
             try
             {
@@ -1203,324 +1203,30 @@ namespace BatteryMonitorApp
             public string DeviceName { get; set; }
         }
 
+        public Point LastFlyoutPos = Point.Empty;
+        public bool HasFlyoutPos = false;
+
         public void ShowSettingsWindow()
         {
-            if (settingsForm != null && settingsForm.Visible)
+            // Open the dedicated settings window in the SAME position/size as the
+            // flyout. If the flyout is open, fade it out simultaneously (settings
+            // fades in from the right); on close, flyout fades back in at its spot.
+            bool flyoutOpen = activeFlyout != null && !activeFlyout.IsDisposed && activeFlyout.Visible;
+            bool knownPos = flyoutOpen || HasFlyoutPos;
+            Point pos = flyoutOpen ? activeFlyout.Location : LastFlyoutPos;
+            if (!knownPos)
             {
-                settingsForm.Focus();
-                return;
+                Point mp = Control.MousePosition;
+                pos = new Point(mp.X - 130, mp.Y - 440 - 12);
             }
+            Rectangle wa = Screen.FromPoint(pos).WorkingArea;
+            if (pos.X < wa.Left + 8) pos.X = wa.Left + 8;
+            if (pos.Y < wa.Top + 8) pos.Y = wa.Top + 8;
 
-            settingsForm = new Form();
-            settingsForm.Text = "Universal Battery Monitor Settings";
-            settingsForm.Size = new Size(390, 465); // Height increased to 465
-            settingsForm.StartPosition = FormStartPosition.CenterScreen;
-            settingsForm.FormBorderStyle = FormBorderStyle.FixedDialog;
-            settingsForm.MaximizeBox = false;
-            settingsForm.MinimizeBox = false;
-            settingsForm.BackColor = Color.FromArgb(25, 25, 25);
-            settingsForm.ForeColor = Color.White;
-
-            Font fontTitle = new Font("Segoe UI", 12f, FontStyle.Bold);
-            Font fontLabel = new Font("Segoe UI", 9.5f, FontStyle.Bold);
-            Font fontSub = new Font("Segoe UI", 8.5f, FontStyle.Regular);
-            Font fontButton = new Font("Segoe UI", 9, FontStyle.Regular);
-
-            // Title
-            Label lblTitle = new Label();
-            lblTitle.Text = "Universal Device Tracking Settings";
-            lblTitle.Font = fontTitle;
-            lblTitle.Location = new Point(15, 15);
-            lblTitle.Size = new Size(360, 25);
-            settingsForm.Controls.Add(lblTitle);
-
-            // Fetch connected USB HID devices
-            List<HidDeviceMetadata> connectedHid = GetConnectedHidDevices();
-            List<SettingsDeviceItem> deviceItems = new List<SettingsDeviceItem>();
-            List<string> seenKeys = new List<string>();
-
-            foreach (var dev in connectedHid)
-            {
-                if (GetProtocolForDevice(dev.Vid, dev.ProductName) == "None")
-                {
-                    continue;
-                }
-
-                string key = "HID_" + dev.Vid.ToString("X4") + "_" + dev.Pid.ToString("X4");
-                if (!seenKeys.Contains(key))
-                {
-                    seenKeys.Add(key);
-                    deviceItems.Add(new SettingsDeviceItem
-                    {
-                        DisplayName = dev.DisplayName,
-                        Vid = dev.Vid,
-                        Pid = dev.Pid,
-                        UsagePage = dev.UsagePage,
-                        Protocol = GetProtocolForDevice(dev.Vid, dev.ProductName),
-                        DeviceName = !string.IsNullOrEmpty(dev.ProductName) ? dev.ProductName : "HID Device"
-                    });
-                }
-            }
-
-            // Fetch connected Bluetooth devices
-            List<BluetoothDeviceMetadata> connectedBt = GetConnectedBluetoothDevices();
-            foreach (var dev in connectedBt)
-            {
-                string key = "BT_" + dev.FriendlyName;
-                if (!seenKeys.Contains(key))
-                {
-                    seenKeys.Add(key);
-                    string disp = "Bluetooth: " + dev.FriendlyName;
-                    if (dev.BatteryLevel >= 0) disp += " (" + dev.BatteryLevel + "%)";
-
-                    deviceItems.Add(new SettingsDeviceItem
-                    {
-                        DisplayName = disp,
-                        Vid = 0,
-                        Pid = 0,
-                        UsagePage = 0,
-                        Protocol = "Bluetooth",
-                        DeviceName = dev.FriendlyName
-                    });
-                }
-            }
-
-            // --- OUTER RING CONFIG ---
-            Label lblOuter = new Label();
-            lblOuter.Text = "Outer Ring:";
-            lblOuter.Font = fontLabel;
-            lblOuter.Location = new Point(20, 50);
-            lblOuter.Size = new Size(150, 20);
-            settingsForm.Controls.Add(lblOuter);
-
-            ComboBox cbOuterDevice = new ComboBox();
-            cbOuterDevice.DropDownStyle = ComboBoxStyle.DropDownList;
-            cbOuterDevice.Font = fontLabel;
-            cbOuterDevice.Location = new Point(20, 75);
-            cbOuterDevice.Size = new Size(345, 25);
-            cbOuterDevice.BackColor = Color.FromArgb(50, 50, 50);
-            cbOuterDevice.ForeColor = Color.White;
-            cbOuterDevice.FlatStyle = FlatStyle.Flat;
-            cbOuterDevice.Items.Add("[ None / Disabled ]");
-            int selectedOuterIndex = 0;
-            for (int i = 0; i < deviceItems.Count; i++)
-            {
-                cbOuterDevice.Items.Add(deviceItems[i].DisplayName);
-                if (deviceItems[i].Protocol == "Bluetooth")
-                {
-                    if (outerConfig.Protocol == "Bluetooth" && deviceItems[i].DeviceName == outerConfig.DeviceName)
-                    {
-                        selectedOuterIndex = i + 1;
-                    }
-                }
-                else
-                {
-                    if (deviceItems[i].Vid == outerConfig.Vid && deviceItems[i].Pid == outerConfig.Pid && outerConfig.Protocol != "Bluetooth" && outerConfig.Protocol != "None")
-                    {
-                        selectedOuterIndex = i + 1;
-                    }
-                }
-            }
-            cbOuterDevice.SelectedIndex = selectedOuterIndex;
-            settingsForm.Controls.Add(cbOuterDevice);
-
-            Label lblOuterStatus = new Label();
-            lblOuterStatus.Font = fontSub;
-            lblOuterStatus.Location = new Point(20, 105);
-            lblOuterStatus.Size = new Size(340, 20);
-            settingsForm.Controls.Add(lblOuterStatus);
-
-            // --- MIDDLE RING CONFIG ---
-            Label lblMiddle = new Label();
-            lblMiddle.Text = "Middle Ring:";
-            lblMiddle.Font = fontLabel;
-            lblMiddle.Location = new Point(20, 130);
-            lblMiddle.Size = new Size(150, 20);
-            settingsForm.Controls.Add(lblMiddle);
-
-            ComboBox cbMiddleDevice = new ComboBox();
-            cbMiddleDevice.DropDownStyle = ComboBoxStyle.DropDownList;
-            cbMiddleDevice.Font = fontLabel;
-            cbMiddleDevice.Location = new Point(20, 155);
-            cbMiddleDevice.Size = new Size(345, 25);
-            cbMiddleDevice.BackColor = Color.FromArgb(50, 50, 50);
-            cbMiddleDevice.ForeColor = Color.White;
-            cbMiddleDevice.FlatStyle = FlatStyle.Flat;
-            cbMiddleDevice.Items.Add("[ None / Disabled ]");
-            int selectedMiddleIndex = 0;
-            for (int i = 0; i < deviceItems.Count; i++)
-            {
-                cbMiddleDevice.Items.Add(deviceItems[i].DisplayName);
-                if (deviceItems[i].Protocol == "Bluetooth")
-                {
-                    if (middleConfig.Protocol == "Bluetooth" && deviceItems[i].DeviceName == middleConfig.DeviceName)
-                    {
-                        selectedMiddleIndex = i + 1;
-                    }
-                }
-                else
-                {
-                    if (deviceItems[i].Vid == middleConfig.Vid && deviceItems[i].Pid == middleConfig.Pid && middleConfig.Protocol != "Bluetooth" && middleConfig.Protocol != "None")
-                    {
-                        selectedMiddleIndex = i + 1;
-                    }
-                }
-            }
-            cbMiddleDevice.SelectedIndex = selectedMiddleIndex;
-            settingsForm.Controls.Add(cbMiddleDevice);
-
-            Label lblMiddleStatus = new Label();
-            lblMiddleStatus.Font = fontSub;
-            lblMiddleStatus.Location = new Point(20, 185);
-            lblMiddleStatus.Size = new Size(340, 20);
-            settingsForm.Controls.Add(lblMiddleStatus);
-
-            // --- INNER RING CONFIG ---
-            Label lblInner = new Label();
-            lblInner.Text = "Inner Ring:";
-            lblInner.Font = fontLabel;
-            lblInner.Location = new Point(20, 210);
-            lblInner.Size = new Size(150, 20);
-            settingsForm.Controls.Add(lblInner);
-
-            ComboBox cbInnerDevice = new ComboBox();
-            cbInnerDevice.DropDownStyle = ComboBoxStyle.DropDownList;
-            cbInnerDevice.Font = fontLabel;
-            cbInnerDevice.Location = new Point(20, 235);
-            cbInnerDevice.Size = new Size(345, 25);
-            cbInnerDevice.BackColor = Color.FromArgb(50, 50, 50);
-            cbInnerDevice.ForeColor = Color.White;
-            cbInnerDevice.FlatStyle = FlatStyle.Flat;
-            cbInnerDevice.Items.Add("[ None / Disabled ]");
-            int selectedInnerIndex = 0;
-            for (int i = 0; i < deviceItems.Count; i++)
-            {
-                cbInnerDevice.Items.Add(deviceItems[i].DisplayName);
-                if (deviceItems[i].Protocol == "Bluetooth")
-                {
-                    if (innerConfig.Protocol == "Bluetooth" && deviceItems[i].DeviceName == innerConfig.DeviceName)
-                    {
-                        selectedInnerIndex = i + 1;
-                    }
-                }
-                else
-                {
-                    if (deviceItems[i].Vid == innerConfig.Vid && deviceItems[i].Pid == innerConfig.Pid && innerConfig.Protocol != "Bluetooth" && innerConfig.Protocol != "None")
-                    {
-                        selectedInnerIndex = i + 1;
-                    }
-                }
-            }
-            cbInnerDevice.SelectedIndex = selectedInnerIndex;
-            settingsForm.Controls.Add(cbInnerDevice);
-
-            Label lblInnerStatus = new Label();
-            lblInnerStatus.Font = fontSub;
-            lblInnerStatus.Location = new Point(20, 265);
-            lblInnerStatus.Size = new Size(340, 20);
-            settingsForm.Controls.Add(lblInnerStatus);
-
-            // Update Label Text function
-            Action updateLabels = () =>
-            {
-                lblOuterStatus.Text = GetStatusLabelText("Outer", outerConfig, LastOuterConnected, LastOuterBattery, LastOuterTransmitterConnected, LastOuterWired);
-                lblMiddleStatus.Text = GetStatusLabelText("Middle", middleConfig, LastMiddleConnected, LastMiddleBattery, false, LastMiddleWired);
-                lblInnerStatus.Text = GetStatusLabelText("Inner", innerConfig, LastInnerConnected, LastInnerBattery, false, LastInnerWired);
-            };
-
-            updateLabels();
-
-            Label lblDiv = new Label();
-            lblDiv.BackColor = Color.FromArgb(60, 60, 60);
-            lblDiv.Location = new Point(15, 295);
-            lblDiv.Size = new Size(340, 1);
-            settingsForm.Controls.Add(lblDiv);
-
-            CheckBox chkStartup = new CheckBox();
-            chkStartup.Text = "Run application at Windows Startup";
-            chkStartup.Font = fontLabel;
-            chkStartup.Location = new Point(20, 305);
-            chkStartup.Size = new Size(340, 25);
-
-            string startupFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Microsoft\Windows\Start Menu\Programs\Startup");
-            string shortcutPath = Path.Combine(startupFolder, "BattStat.lnk");
-            chkStartup.Checked = File.Exists(shortcutPath);
-            settingsForm.Controls.Add(chkStartup);
-
-            CheckBox chkUpdate = new CheckBox();
-            chkUpdate.Text = "Check for updates on startup";
-            chkUpdate.Font = fontLabel;
-            chkUpdate.Location = new Point(20, 330);
-            chkUpdate.Size = new Size(340, 25);
-            chkUpdate.Checked = autoUpdateEnabled;
-            settingsForm.Controls.Add(chkUpdate);
-
-            // Action Buttons
-            Button btnRefresh = new Button();
-            btnRefresh.Text = "Refresh Scan";
-            btnRefresh.Font = fontButton;
-            btnRefresh.Location = new Point(20, 365);
-            btnRefresh.Size = new Size(130, 30);
-            btnRefresh.FlatStyle = FlatStyle.Flat;
-            btnRefresh.FlatAppearance.BorderColor = Color.FromArgb(100, 100, 100);
-            btnRefresh.Cursor = Cursors.Hand;
-            btnRefresh.Click += (s, e) =>
-            {
-                UpdateBatteryStatus();
-                updateLabels();
-            };
-            settingsForm.Controls.Add(btnRefresh);
-
-            Button btnClose = new Button();
-            btnClose.Text = "Save & Close";
-            btnClose.Font = fontButton;
-            btnClose.Location = new Point(230, 365);
-            btnClose.Size = new Size(125, 30);
-            btnClose.FlatStyle = FlatStyle.Flat;
-            btnClose.FlatAppearance.BorderColor = Color.FromArgb(100, 100, 100);
-            btnClose.Cursor = Cursors.Hand;
-            btnClose.Click += (s, e) =>
-            {
-                // Save Outer
-                SaveSelectedDevice(cbOuterDevice, outerConfig, deviceItems, "Outer Ring");
-                // Save Middle
-                SaveSelectedDevice(cbMiddleDevice, middleConfig, deviceItems, "Middle Ring");
-                // Save Inner
-                SaveSelectedDevice(cbInnerDevice, innerConfig, deviceItems, "Inner Ring");
-
-                autoUpdateEnabled = chkUpdate.Checked;
-
-                SaveConfiguration();
-
-                // Handle startup checkbox
-                bool exists = File.Exists(shortcutPath);
-                if (chkStartup.Checked && !exists)
-                {
-                    try
-                    {
-                        string currentExe = Application.ExecutablePath;
-                        string workingDir = Path.GetDirectoryName(currentExe);
-                        Type shellType = Type.GetTypeFromProgID("WScript.Shell");
-                        dynamic shell = Activator.CreateInstance(shellType);
-                        dynamic shortcut = shell.CreateShortcut(shortcutPath);
-                        shortcut.TargetPath = currentExe;
-                        shortcut.WorkingDirectory = workingDir;
-                        shortcut.Description = "Universal Headset, Mouse, and Bluetooth Battery Monitor";
-                        shortcut.Save();
-                    }
-                    catch { }
-                }
-                else if (!chkStartup.Checked && exists)
-                {
-                    File.Delete(shortcutPath);
-                }
-
-                UpdateBatteryStatus();
-                settingsForm.Close();
-            };
-            settingsForm.Controls.Add(btnClose);
-
-            settingsForm.ShowDialog();
+            // Note: don't close the flyout here — showing the settings window takes
+            // focus, which triggers the flyout's own fade-out. True crossfade.
+            SettingsWindow sw = new SettingsWindow(this, pos, knownPos, pos);
+            sw.Show();
         }
 
         private string GetStatusLabelText(string position, DeviceConfig config, bool connected, int battery, bool transmitterConnected, bool wired)
@@ -1549,6 +1255,82 @@ namespace BatteryMonitorApp
                 config.Protocol = sel.Protocol;
                 config.DeviceName = sel.DeviceName;
             }
+        }
+
+        public List<SettingsDeviceItem> ScanAvailableDevices()
+        {
+            List<SettingsDeviceItem> deviceItems = new List<SettingsDeviceItem>();
+            List<string> seenKeys = new List<string>();
+
+            foreach (var dev in GetConnectedHidDevices())
+            {
+                if (GetProtocolForDevice(dev.Vid, dev.ProductName) == "None") continue;
+
+                string key = "HID_" + dev.Vid.ToString("X4") + "_" + dev.Pid.ToString("X4");
+                if (!seenKeys.Contains(key))
+                {
+                    seenKeys.Add(key);
+                    deviceItems.Add(new SettingsDeviceItem
+                    {
+                        DisplayName = dev.DisplayName,
+                        Vid = dev.Vid,
+                        Pid = dev.Pid,
+                        UsagePage = dev.UsagePage,
+                        Protocol = GetProtocolForDevice(dev.Vid, dev.ProductName),
+                        DeviceName = !string.IsNullOrEmpty(dev.ProductName) ? dev.ProductName : "HID Device"
+                    });
+                }
+            }
+
+            foreach (var dev in GetConnectedBluetoothDevices())
+            {
+                string key = "BT_" + dev.FriendlyName;
+                if (!seenKeys.Contains(key))
+                {
+                    seenKeys.Add(key);
+                    string disp = "Bluetooth: " + dev.FriendlyName;
+                    if (dev.BatteryLevel >= 0) disp += " (" + dev.BatteryLevel + "%)";
+
+                    deviceItems.Add(new SettingsDeviceItem
+                    {
+                        DisplayName = disp,
+                        Vid = 0,
+                        Pid = 0,
+                        UsagePage = 0,
+                        Protocol = "Bluetooth",
+                        DeviceName = dev.FriendlyName
+                    });
+                }
+            }
+
+            return deviceItems;
+        }
+
+        // Apply a picker-popup selection to a device config (used by SettingsWindow)
+        public void ApplyDeviceSelection(DeviceConfig config, int selectedIndex, List<SettingsDeviceItem> deviceItems)
+        {
+            if (selectedIndex <= 0)
+            {
+                config.Protocol = "None";
+                config.DeviceName = "";
+            }
+            else
+            {
+                SettingsDeviceItem sel = deviceItems[selectedIndex - 1];
+                config.Vid = sel.Vid;
+                config.Pid = sel.Pid;
+                config.UsagePage = sel.UsagePage;
+                config.Protocol = sel.Protocol;
+                config.DeviceName = sel.DeviceName;
+            }
+        }
+
+        // Reopen the main flyout at a given position (after settings closes)
+        public void ReopenFlyoutAt(Point pos)
+        {
+            lastClosedTime = DateTime.MinValue; // skip debounce
+            activeFlyout = new FlyoutForm(this, pos.X, pos.Y);
+            activeFlyout.Show();
         }
 
         public void ClearActiveFlyout()
@@ -1593,6 +1375,8 @@ namespace BatteryMonitorApp
             if (y + fHeight > screen.Bottom - 10) y = screen.Bottom - fHeight - 10;
 
             activeFlyout = new FlyoutForm(this, x, y);
+            LastFlyoutPos = new Point(x, y); // remember for settings window positioning
+            HasFlyoutPos = true;
             activeFlyout.Show();
             SetForegroundWindow(activeFlyout.Handle);
             activeFlyout.Activate();
@@ -1734,15 +1518,17 @@ namespace BatteryMonitorApp
             };
             blinkTimer.Start();
 
-            Timer autoClose = new Timer();
-            autoClose.Interval = 15000;
-            autoClose.Tick += (s, e) =>
+            autoCloseTimer = new Timer();
+            autoCloseTimer.Interval = 15000;
+            autoCloseTimer.Tick += (s, e) =>
             {
-                autoClose.Stop();
+                autoCloseTimer.Stop();
                 this.Close();
             };
-            autoClose.Start();
+            autoCloseTimer.Start();
         }
+
+        private Timer autoCloseTimer;
 
         public void UpdateMessage(string msg)
         {
@@ -1772,6 +1558,12 @@ namespace BatteryMonitorApp
                 blinkTimer.Stop();
                 blinkTimer.Dispose();
                 blinkTimer = null;
+            }
+            if (autoCloseTimer != null)
+            {
+                autoCloseTimer.Stop();
+                autoCloseTimer.Dispose();
+                autoCloseTimer = null;
             }
             base.OnFormClosed(e);
         }
@@ -1826,6 +1618,916 @@ namespace BatteryMonitorApp
         }
     }
 
+    // Dedicated settings window, styled like the main flyout modal.
+    // Fades/slides in from the right; on close it slides back right and,
+    // if it was opened from the flyout, the flyout fades back in.
+    public class SettingsWindow : Form
+    {
+        private BatteryMonitorContext context;
+        private Timer animTimer;
+        private bool isClosing = false;
+        private double currentOpacity = 0.0;
+        private int xOffset = 36; // start offset to the right, slides left into place
+        private Action onClosedCallback = null;
+        private Point targetLocation;
+        private bool returnToFlyout;
+        private Point flyoutReturnPos;
+        private bool closeWasSave = false;
+
+        private List<BatteryMonitorContext.SettingsDeviceItem> deviceItems;
+        private Label[] slotPills = new Label[3];
+        private DeviceConfig[] slotConfigs = new DeviceConfig[3];
+        private CheckBox chkStartup, chkUpdate;
+        private string startupShortcutPath;
+        private bool pickerOpen = false;
+        private DateTime pickerClosedTime = DateTime.MinValue;
+        private Timer pollTimer;
+
+        // Is any modal picker/popup of ours currently open?
+        private bool PopupIsOpen()
+        {
+            foreach (Form f in Application.OpenForms)
+            {
+                if (f != this && f.Visible && f.GetType().Name == "PickerPopup") return true;
+            }
+            return false;
+        }
+        private Font fontValueShared;
+        private Color settingsHostlessBack = Color.FromArgb(28, 28, 28);
+
+        // Rounded-rectangle path helper
+        private static System.Drawing.Drawing2D.GraphicsPath RoundedRect(Rectangle r, int radius)
+        {
+            using (System.Drawing.Drawing2D.GraphicsPath path = new System.Drawing.Drawing2D.GraphicsPath())
+            {
+                int d = radius * 2;
+                System.Drawing.Drawing2D.GraphicsPath gp = new System.Drawing.Drawing2D.GraphicsPath();
+                gp.AddArc(r.X, r.Y, d, d, 180, 90);
+                gp.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+                gp.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+                gp.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+                gp.CloseFigure();
+                return gp;
+            }
+        }
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        // True when the currently focused window belongs to this process
+        // (our picker popups, toasts, etc.) — focus shifts between our own
+        // windows must not count as "user clicked outside".
+        private bool ForegroundIsOurs()
+        {
+            IntPtr fg = GetForegroundWindow();
+            if (fg == IntPtr.Zero) return true; // can't tell — assume ours, don't close
+            uint pid;
+            GetWindowThreadProcessId(fg, out pid);
+            return pid == (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+        }
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+        public SettingsWindow(BatteryMonitorContext ctx, Point location, bool fromFlyout, Point flyoutPos)
+        {
+            context = ctx;
+            targetLocation = location;
+            returnToFlyout = fromFlyout;
+            flyoutReturnPos = flyoutPos;
+
+            this.FormBorderStyle = FormBorderStyle.None;
+            this.ShowInTaskbar = false;
+            this.TopMost = true;
+            this.StartPosition = FormStartPosition.Manual;
+            // Same shape/size as the main flyout: 260 wide, 440 tall for 3 active rings
+            int activeCount = (ctx.outerConfig.Protocol != "None" ? 1 : 0) + (ctx.middleConfig.Protocol != "None" ? 1 : 0) + (ctx.innerConfig.Protocol != "None" ? 1 : 0);
+            int formHeight = 440 - ((3 - activeCount) * 45);
+            this.Size = new Size(260, formHeight);
+            this.BackColor = Color.FromArgb(28, 28, 28);
+            this.DoubleBuffered = true;
+            this.Opacity = 0.0;
+            this.Location = new Point(location.X + xOffset, location.Y);
+
+            try
+            {
+                int attribute = 33; // DWMWA_WINDOW_CORNER_PREFERENCE
+                int preference = 2; // round
+                DwmSetWindowAttribute(this.Handle, attribute, ref preference, sizeof(int));
+            }
+            catch { }
+
+            // Owner-drawn UI: single paint surface + hit zones (no child controls)
+            this.Paint += SettingsPaint;
+            this.MouseMove += Settings_MouseMove;
+            this.MouseLeave += Settings_MouseLeave;
+            this.MouseClick += Settings_MouseClick;
+            ComputeLayout();
+
+            this.Deactivate += (s, e) =>
+            {
+                // Ignore if focus went to another window of OUR OWN process
+                if (ForegroundIsOurs()) return;
+                if (!isClosing) StartClose();
+            };
+
+            animTimer = new Timer();
+            animTimer.Interval = 15;
+            animTimer.Tick += AnimTick;
+            animTimer.Start();
+
+            // Safety net: poll foreground window — if focus is in another app,
+            // close. Covers any missed Deactivate.
+            pollTimer = new Timer();
+            pollTimer.Interval = 250;
+            pollTimer.Tick += (s, e) =>
+            {
+                if (isClosing) return;
+                if (!ForegroundIsOurs()) StartClose();
+            };
+            pollTimer.Start();
+
+            if (pendingStartup == false && pendingUpdate == false)
+            {
+                // first open: seed checkbox states from the real config
+                startupShortcutPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    @"Microsoft\Windows\Start Menu\Programs\Startup\BattStat.lnk");
+                pendingStartup = File.Exists(startupShortcutPath);
+                pendingUpdate = context.autoUpdateEnabled;
+            }
+        }
+
+        private int expandedSlot = -1;
+        private bool pendingStartup;
+        private bool pendingUpdate;
+        private int?[] pendingSelections = new int?[3]; // staged device picks, applied on Save
+        private float expandAnim = 1f;   // 0..1 reveal animation for the options list
+        private Timer expandAnimTimer;
+
+        // Ring accent colors — same as the flyout rings
+        private static readonly Color[] RingColors = new Color[]
+        {
+            Color.FromArgb(255, 17, 72),   // outer: red/pink
+            Color.FromArgb(0, 180, 255),   // middle: cyan
+            Color.FromArgb(170, 255, 0)    // inner: lime
+        };
+
+        private void StartExpandAnimation()
+        {
+            expandAnim = 0f;
+            if (expandAnimTimer == null)
+            {
+                expandAnimTimer = new Timer();
+                expandAnimTimer.Interval = 15;
+                expandAnimTimer.Tick += (s, e) =>
+                {
+                    expandAnim = Math.Min(1f, expandAnim + 0.12f);
+                    this.Invalidate();
+                    if (expandAnim >= 1f)
+                    {
+                        expandAnimTimer.Stop();
+                    }
+                };
+            }
+            expandAnimTimer.Start();
+        }
+
+        private int CurrentSelectionIndex(DeviceConfig cfg)
+        {
+            if (deviceItems == null) return 0;
+            int current = 0;
+            for (int i = 0; i < deviceItems.Count; i++)
+            {
+                var it = deviceItems[i];
+                bool match;
+                if (it.Protocol == "Bluetooth")
+                    match = cfg.Protocol == "Bluetooth" && it.DeviceName == cfg.DeviceName;
+                else
+                    match = it.Vid == cfg.Vid && it.Pid == cfg.Pid && cfg.Protocol != "Bluetooth" && cfg.Protocol != "None";
+                if (match) { current = i + 1; break; }
+            }
+            return current;
+        }
+
+        private static string TruncateOption(string s)
+        {
+            if (s.Length <= 24) return s;
+            return s.Substring(0, 23).TrimEnd() + "\u2026";
+        }
+
+        private void ToggleExpand(int slot)
+        {
+            bool opening = expandedSlot != slot;
+            expandedSlot = (expandedSlot == slot) ? -1 : slot;
+            ComputeLayout();
+            if (opening) StartExpandAnimation();
+            this.Invalidate();
+        }
+
+
+        private List<HitZone> zones = new List<HitZone>();
+        private int hoverZone = -1;
+        private Font fTitle = new Font("Segoe UI", 11f, FontStyle.Bold);
+        private Font fSection = new Font("Segoe UI", 8.25f, FontStyle.Bold);
+        private Font fValue = new Font("Segoe UI", 9f);
+        private Font fCheck = new Font("Segoe UI", 9f);
+        private Font fChevron = new Font("Segoe UI", 9f, FontStyle.Bold);
+
+        private class HitZone
+        {
+            public Rectangle Rect;
+            public string Action; // toggle | option | startup | updates | save
+            public int A, B;      // slot / option indices
+        }
+
+        private static System.Drawing.Drawing2D.GraphicsPath Rounded(Rectangle r, int rad)
+        {
+            System.Drawing.Drawing2D.GraphicsPath gp = new System.Drawing.Drawing2D.GraphicsPath();
+            int d = rad * 2;
+            gp.AddArc(r.X, r.Y, d, d, 180, 90);
+            gp.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            gp.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            gp.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            gp.CloseFigure();
+            return gp;
+        }
+
+        private void ComputeLayout()
+        {
+            zones.Clear();
+            hoverZone = -1; // zone list rebuilt — stale index would crash Paint
+            int W = this.Width, H = this.Height;
+
+            // Window size NEVER changes — expanded options overlay the bottom bar
+            // option hit zones — added FIRST so ZoneAt's reverse scan finds them
+            // before the section toggles they overlap
+            if (expandedSlot != -1 && deviceItems != null)
+            {
+                int count = deviceItems.Count + 1;
+                int optTop = 54 + expandedSlot * 64 + 20;
+                for (int o = 0; o < count; o++)
+                    zones.Insert(0, new HitZone { Rect = new Rectangle(0, optTop + o * 30, W, 30), Action = "option", A = expandedSlot, B = o });
+            }
+
+            int y2 = 54;
+            for (int i = 0; i < 3; i++)
+            {
+                // hit zone matches the painted section block exactly (y..y+56)
+                zones.Add(new HitZone { Rect = new Rectangle(0, y2, W, 56), Action = "toggle", A = i });
+                y2 += 64;
+            }
+
+            zones.Add(new HitZone { Rect = new Rectangle(12, H - 102, W - 24, 24), Action = "startup" });
+            zones.Add(new HitZone { Rect = new Rectangle(12, H - 76, W - 24, 24), Action = "updates" });
+            zones.Add(new HitZone { Rect = new Rectangle(16, H - 46, W - 32, 32), Action = "save" });
+        }
+
+        private HitZone ZoneAt(Point p)
+        {
+            // OPTION ZONES ALWAYS WIN — they're the top z-layer when a list is
+            // open. Everything else is checked afterwards.
+            if (expandedSlot != -1)
+            {
+                foreach (var z in zones)
+                    if (z.Action == "option" && z.Rect.Contains(p)) return z;
+                // inside the open list area but not on a row = dead space
+                return null;
+            }
+            for (int i = zones.Count - 1; i >= 0; i--)
+                if (zones[i].Rect.Contains(p)) return zones[i];
+            return null;
+        }
+
+        private void SettingsPaint(object sender, PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+            int W = this.Width, H = this.Height;
+            bool dim = expandedSlot != -1; // list open = rest of UI dimmed + locked
+            Color cDimText = Color.FromArgb(105, 105, 110);
+
+            using (Pen pb = new Pen(Color.FromArgb(55, 55, 58), 1))
+                g.DrawRectangle(pb, 0, 0, W - 1, H - 1);
+
+            // Title
+            using (SolidBrush b = new SolidBrush(dim ? cDimText : Color.White))
+                g.DrawString("Settings", fTitle, b, 20, 13);
+
+            // divider under title (full width)
+            using (Pen dp = new Pen(Color.FromArgb(48, 48, 52), 1))
+                g.DrawLine(dp, 0, 46, W, 46);
+
+            if (deviceItems == null) deviceItems = context.ScanAvailableDevices();
+
+            slotConfigs[0] = context.outerConfig;
+            slotConfigs[1] = context.middleConfig;
+            slotConfigs[2] = context.innerConfig;
+            string[] names = new string[] { "OUTER RING", "MIDDLE RING", "INNER RING" };
+
+            int zi = 0; // zone pointer (zones were laid out in same order)
+            int y = 54; // consistent breathing room below the title divider
+            int expOptTop = 0, expOptBottom = 0, expLeft = 15, expRight = W - 15;
+
+            for (int i = 0; i < 3; i++)
+            {
+                DeviceConfig cfg = slotConfigs[i];
+                bool exp = i == expandedSlot;
+                bool secHot = hoverZone >= 0 && zones[hoverZone] != null && zones[hoverZone].Action == "toggle" && zones[hoverZone].A == i;
+
+                // HOVER BAND FIRST (background layer): covers the full stride
+                // INCLUDING this section's divider line, so the highlight is one
+                // unbroken block. Text is drawn on top afterwards.
+                // The FIRST section's band reaches up to the title divider (46),
+                // so there's no unhighlighted gap between them.
+                if (secHot)
+                {
+                    // start at the divider ABOVE this section (y-8) so the band
+                    // is bounded divider-to-divider with no unhighlighted strip;
+                    // the first section reaches up to the title divider (46)
+                    int bandTop = (i == 0) ? 46 : y - 8;
+                    using (SolidBrush hb = new SolidBrush(
+                        dim ? Color.FromArgb(38, 38, 42) : Color.FromArgb(52, 52, 56)))
+                        g.FillRectangle(hb, 0, bandTop, W, (y + 57) - bandTop);
+                }
+
+                // divider under section — painted after the band so it stays a
+                // crisp visible line even on the hovered row
+                using (Pen dp = new Pen(Color.FromArgb(48, 48, 52), 1))
+                    g.DrawLine(dp, 0, y + 56, W, y + 56);
+
+                // section label takes its RING's accent color (matches the flyout rings);
+                // dims when another section is expanded
+                Color ringCol = RingColors[i];
+                Color secCol = dim && !exp
+                    ? Color.FromArgb(90, 105, 105, 110)
+                    : (exp ? ControlPaint.LightLight(ringCol) : ringCol);
+                Color valCol = dim && !exp ? cDimText : Color.White;
+
+                // section label
+                using (SolidBrush b = new SolidBrush(secCol))
+                    g.DrawString(names[i], fSection, b, 20, y + 4);
+
+                // "+" toggle on the right, aligned with the value line
+                string plus = exp ? "\u2212" : "+";
+                using (SolidBrush b = new SolidBrush(secCol))
+                    g.DrawString(plus, fChevron, b, new RectangleF(W - 40, y + 22, 20, 20), new StringFormat { Alignment = StringAlignment.Far });
+
+                // value row — honors any staged (not yet saved) pick
+                string val;
+                if (pendingSelections[i].HasValue && deviceItems != null)
+                {
+                    int sel = pendingSelections[i].Value;
+                    if (sel <= 0) val = "No device selected (disabled)";
+                    else if (sel - 1 < deviceItems.Count) val = deviceItems[sel - 1].DisplayName;
+                    else val = "No device selected (disabled)";
+                }
+                else if (cfg.Protocol == "None") val = "No device selected (disabled)";
+                else if (cfg.Protocol == "Bluetooth") val = cfg.DeviceName;
+                else val = context.GetFriendlyDeviceName(cfg.DeviceName, cfg.Vid, cfg.Pid);
+                using (Font fv = new Font("Segoe UI", 9f))
+                using (SolidBrush b = new SolidBrush(valCol))
+                    g.DrawString(val, fv, b, 20, y + 22);
+
+                if (exp)
+                {
+                    // EXPANDED: the options list becomes its own z-layer painted
+                    // LAST (see PaintExpandedList) — it OVERLAYS the sections
+                    // below; nothing moves or shifts down.
+                    y += 64;
+                }
+                else
+                {
+                    y += 64;
+                }
+            }
+
+            // Bottom bar (checkboxes + Save) — painted BEFORE the expanded list
+            // so the opaque dropdown covers them when they overlap. ------------
+            DrawCheck(g, 18, H - 98, pendingStartup, "Run application at Windows startup", dim);
+            DrawCheck(g, 18, H - 74, pendingUpdate, "Check for updates on startup", dim);
+
+            Rectangle sr = new Rectangle(16, H - 46, W - 32, 32);
+            bool saveHot = hoverZone >= 0 && zones[hoverZone] != null && zones[hoverZone].Action == "save" && !dim;
+            Color sBack = dim ? Color.FromArgb(45, 60, 85) : (saveHot ? Color.FromArgb(25, 135, 225) : Color.FromArgb(0, 120, 212));
+            using (System.Drawing.Drawing2D.GraphicsPath gp = Rounded(sr, 6))
+            using (SolidBrush b = new SolidBrush(sBack))
+                g.FillPath(b, gp);
+            using (SolidBrush b = new SolidBrush(dim ? cDimText : Color.White))
+            {
+                StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                g.DrawString("Save", new Font("Segoe UI", 9f, FontStyle.Bold), b, new RectangleF(sr.X, sr.Y, sr.Width, sr.Height), sf);
+            }
+
+            // EXPANDED LIST LAST = highest z-index. Its opaque background covers
+            // anything underneath it (checkboxes, save button) while open.
+            PaintExpandedList(g, W);
+        }
+
+        private void PaintExpandedList(Graphics g, int W)
+        {
+            if (expandedSlot == -1 || deviceItems == null) return;
+
+            DeviceConfig cfg = slotConfigs[expandedSlot];
+            List<string> options = new List<string>();
+            options.Add("None / Disable");
+            foreach (var it in deviceItems)
+            {
+                // same friendly naming the flyout uses — kills "SteelSeries SteelSeries…"
+                string nm = it.Protocol == "Bluetooth" ? it.DeviceName : context.GetFriendlyDeviceName(it.DeviceName, it.Vid, it.Pid);
+                if (string.IsNullOrEmpty(nm)) nm = it.DisplayName;
+                options.Add(nm);
+            }
+            int current = CurrentSelectionIndex(cfg);
+
+            bool anyOptHot = false;
+            int hotOptIdx = -1;
+            foreach (var z in zones)
+            {
+                if (z.Action == "option" && zones.IndexOf(z) == hoverZone) { anyOptHot = true; hotOptIdx = z.B; break; }
+            }
+
+            // OPAQUE dropdown background — starts right below the section LABEL
+            // (covers the device-name line, which is replaced by the list) and
+            // sized to just the option rows.
+            int optTop = 54 + expandedSlot * 64 + 20;
+            int listH = options.Count * 30;
+            using (SolidBrush bb = new SolidBrush(Color.FromArgb(28, 28, 28)))
+                g.FillRectangle(bb, 1, optTop, W - 2, listH + 2);
+
+            int oy = optTop;
+            float reveal = expandAnim;
+            for (int o = 0; o < options.Count; o++)
+            {
+                bool sel = o == current;
+                float rowReveal = Math.Max(0f, Math.Min(1f, reveal * options.Count - o));
+                bool hot = anyOptHot && o == hotOptIdx;
+
+                // full-width hover band; selected row keeps a stable subtle tint
+                if (hot)
+                {
+                    using (SolidBrush b = new SolidBrush(Color.FromArgb(52, 52, 56)))
+                        g.FillRectangle(b, 1, oy, W - 2, 30);
+                }
+                else if (sel)
+                {
+                    using (SolidBrush b = new SolidBrush(Color.FromArgb(38, 38, 41)))
+                        g.FillRectangle(b, 1, oy, W - 2, 30);
+                }
+
+                string label = TruncateOption(options[o]);
+                using (Font fv = new Font("Segoe UI", 9f, sel ? FontStyle.Bold : FontStyle.Regular))
+                using (SolidBrush b = new SolidBrush(Color.FromArgb((int)(255 * rowReveal), sel ? Color.White : Color.FromArgb(200, 200, 205))))
+                    g.DrawString(label, fv, b, new RectangleF(20, oy + 6, W - 60, 20));
+                if (sel)
+                    using (Font fc = new Font("Segoe MDL2 Assets", 9f))
+                    using (SolidBrush b = new SolidBrush(Color.FromArgb((int)(255 * rowReveal), Color.FromArgb(0, 150, 240))))
+                        g.DrawString("\uE73E", fc, b, W - 30, oy + 6);
+
+                using (Pen sp = new Pen(Color.FromArgb(40, 40, 44), 1))
+                    g.DrawLine(sp, 1, oy + 29, W - 1, oy + 29);
+
+                oy += 30;
+            }
+        }
+
+        private void DrawCheck(Graphics g, int x, int y, bool checkedVal, string text, bool dim)
+        {
+            Color txtCol = dim ? Color.FromArgb(105, 105, 110) : Color.White;
+            Color boxBack = checkedVal ? Color.FromArgb(0, 120, 212) : Color.FromArgb(45, 45, 48);
+            if (dim) boxBack = Color.FromArgb(38, 48, 66);
+            Rectangle box = new Rectangle(x, y + 1, 15, 15);
+            using (System.Drawing.Drawing2D.GraphicsPath gp = Rounded(box, 3))
+            {
+                using (SolidBrush b = new SolidBrush(boxBack)) g.FillPath(b, gp);
+                using (Pen p = new Pen(checkedVal ? boxBack : Color.FromArgb(90, 90, 95), 1)) g.DrawPath(p, gp);
+            }
+            if (checkedVal)
+            {
+                // draw the checkmark as vector lines, centered in the box —
+                // no font glyph (E73E renders off-center at small sizes)
+                using (Pen ck = new Pen(Color.White, 1.6f))
+                {
+                    ck.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+                    ck.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+                    int cx = box.X + box.Width / 2;
+                    int cy = box.Y + box.Height / 2;
+                    g.DrawLine(ck, cx - 3, cy + 0, cx - 1, cy + 3);   // down-stroke
+                    g.DrawLine(ck, cx - 1, cy + 3, cx + 4, cy - 3);   // up-stroke
+                }
+            }
+            using (SolidBrush b = new SolidBrush(txtCol))
+                g.DrawString(text, fCheck, b, x + 24, y);
+        }
+
+        private void Settings_MouseMove(object sender, MouseEventArgs e)
+        {
+            HitZone z = ZoneAt(e.Location);
+            // While a selection list is open, ONLY its option rows are hoverable —
+            // the dimmed background layer must not react to the mouse.
+            if (expandedSlot != -1 && (z == null || z.Action != "option"))
+            {
+                if (hoverZone != -1) { hoverZone = -1; Cursor = Cursors.Default; this.Invalidate(); }
+                return;
+            }
+            int idx = z != null ? zones.IndexOf(z) : -1;
+            Cursor = z != null ? Cursors.Hand : Cursors.Default;
+            if (idx != hoverZone) { hoverZone = idx; this.Invalidate(); }
+        }
+
+        private void Settings_MouseLeave(object sender, EventArgs e)
+        {
+            if (hoverZone != -1) { hoverZone = -1; this.Invalidate(); }
+        }
+
+        private void Settings_MouseClick(object sender, MouseEventArgs e)
+        {
+            HitZone z = ZoneAt(e.Location);
+            if (z == null)
+            {
+                // clicking empty space while a list is open closes it
+                if (expandedSlot != -1) ToggleExpand(expandedSlot);
+                return;
+            }
+            switch (z.Action)
+            {
+                case "toggle":
+                    // while a list is open, other sections are LOCKED — clicking
+                    // them just closes the open list
+                    if (expandedSlot != -1 && z.A != expandedSlot)
+                    {
+                        ToggleExpand(expandedSlot);
+                        break;
+                    }
+                    ToggleExpand(z.A);
+                    break;
+                case "option":
+                    // STAGE the selection — applied to the live config only on Save
+                    pendingSelections[expandedSlot] = z.B;
+                    expandedSlot = -1;
+                    ComputeLayout();
+                    this.Invalidate();
+                    break;
+                case "startup":
+                case "updates":
+                    // locked while a list is open — ignore clicks
+                    if (expandedSlot != -1) break;
+                    if (z.Action == "startup") pendingStartup = !pendingStartup;
+                    else pendingUpdate = !pendingUpdate;
+                    this.Invalidate();
+                    break;
+                case "save":
+                    // locked while a list is open
+                    if (expandedSlot != -1) break;
+                    SaveAndClose();
+                    break;
+            }
+        }
+
+
+
+        private string PillText(DeviceConfig cfg)
+        {
+            if (cfg.Protocol == "None") return "+  Tap to choose a device";
+            if (cfg.Protocol == "Bluetooth") return "\u25CF  " + cfg.DeviceName;
+            return "\u25CF  " + context.GetFriendlyDeviceName(cfg.DeviceName, cfg.Vid, cfg.Pid);
+        }
+
+        // Pill text for a slot, honoring any staged (not yet saved) device pick
+        private string PillTextForSlot(int slot)
+        {
+            if (pendingSelections[slot].HasValue && deviceItems != null)
+            {
+                int sel = pendingSelections[slot].Value;
+                if (sel <= 0) return "+  Tap to choose a device";
+                if (sel - 1 < deviceItems.Count)
+                {
+                    var it = deviceItems[sel - 1];
+                    return "●  " + it.DisplayName;
+                }
+            }
+            return PillText(slotConfigs[slot]);
+        }
+
+        private void RescanDevices()
+        {
+            deviceItems = context.ScanAvailableDevices();
+            if (slotPills[0] != null && !slotPills[0].IsDisposed)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    if (slotPills[i] != null && !slotPills[i].IsDisposed)
+                        slotPills[i].Text = PillText(slotConfigs[i]);
+                }
+            }
+        }
+
+        private void ShowPicker(int slotIndex)
+        {
+            if (deviceItems == null) RescanDevices();
+
+            DeviceConfig cfg = slotConfigs[slotIndex];
+
+            List<string> options = new List<string>();
+            options.Add("[ None / Disabled ]");
+            foreach (var it in deviceItems) options.Add(it.DisplayName);
+
+            int current = 0;
+            for (int i = 0; i < deviceItems.Count; i++)
+            {
+                var it = deviceItems[i];
+                bool match;
+                if (it.Protocol == "Bluetooth")
+                    match = cfg.Protocol == "Bluetooth" && it.DeviceName == config_DeviceName(cfg) && cfg.Protocol == "Bluetooth";
+                else
+                    match = it.Vid == cfg.Vid && it.Pid == cfg.Pid && cfg.Protocol != "Bluetooth" && cfg.Protocol != "None";
+                if (match) { current = i + 1; break; }
+            }
+
+            Point anchor = slotPills[slotIndex].PointToScreen(new Point(4, slotPills[slotIndex].Height + 3));
+            PickerPopup popup = new PickerPopup(options, current);
+
+            Rectangle wa = Screen.FromPoint(anchor).WorkingArea;
+            if (anchor.Y + popup.Height > wa.Bottom) anchor.Y = wa.Bottom - popup.Height - 4;
+            if (anchor.X + popup.Width > wa.Right) anchor.X = wa.Right - popup.Width - 4;
+            popup.Location = anchor;
+
+            pickerOpen = true;
+            popup.FormClosed += (s, e) =>
+            {
+                pickerOpen = false;
+                pickerClosedTime = DateTime.Now;
+                this.Activate(); // retake focus so the flyout-return chain stays intact
+            };
+
+            if (popup.ShowDialog() == DialogResult.OK && popup.SelectedIndex >= 0)
+            {
+                context.ApplyDeviceSelection(cfg, popup.SelectedIndex, deviceItems);
+                slotPills[slotIndex].Text = PillText(cfg);
+            }
+        }
+
+        private static string config_DeviceName(DeviceConfig cfg) { return cfg.DeviceName; }
+
+        private void SaveAndClose()
+        {
+            closeWasSave = true;
+            // apply any staged device selections to the live config before saving
+            for (int i = 0; i < 3; i++)
+            {
+                if (pendingSelections[i].HasValue)
+                {
+                    context.ApplyDeviceSelection(slotConfigs[i], pendingSelections[i].Value, deviceItems);
+                    pendingSelections[i] = null;
+                }
+            }
+            context.autoUpdateEnabled = pendingUpdate;
+            context.SaveConfiguration();
+
+            try
+            {
+                bool exists = File.Exists(startupShortcutPath);
+                if (pendingStartup && !exists)
+                {
+                    string currentExe = Application.ExecutablePath;
+                    Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+                    dynamic shell = Activator.CreateInstance(shellType);
+                    dynamic shortcut = shell.CreateShortcut(startupShortcutPath);
+                    shortcut.TargetPath = currentExe;
+                    shortcut.WorkingDirectory = Path.GetDirectoryName(currentExe);
+                    shortcut.Description = "Universal Headset, Mouse, and Bluetooth Battery Monitor";
+                    shortcut.Save();
+                }
+                else if (!pendingStartup && exists)
+                {
+                    File.Delete(startupShortcutPath);
+                }
+            }
+            catch { }
+
+            context.UpdateBatteryStatus();
+            StartClose();
+        }
+
+        public void ForceClose()
+        {
+            isClosing = true;
+            if (animTimer != null) { animTimer.Stop(); animTimer.Dispose(); animTimer = null; }
+            if (pollTimer != null) { pollTimer.Stop(); pollTimer.Dispose(); pollTimer = null; }
+            if (expandAnimTimer != null) { expandAnimTimer.Stop(); expandAnimTimer.Dispose(); expandAnimTimer = null; }
+            this.Close();
+            this.Dispose();
+        }
+
+        public void StartClose()
+        {
+            if (isClosing) return;
+            isClosing = true;
+            // dismissed without Save → discard staged selections
+            if (!closeWasSave)
+            {
+                for (int i = 0; i < 3; i++) pendingSelections[i] = null;
+            }
+            if (animTimer != null) animTimer.Start();
+        }
+
+        private void AnimTick(object sender, EventArgs e)
+        {
+            if (!isClosing)
+            {
+                // FADE IN + SLIDE LEFT FROM THE RIGHT
+                bool done = true;
+                if (currentOpacity < 1.0)
+                {
+                    currentOpacity = Math.Min(1.0, currentOpacity + 0.08);
+                    this.Opacity = currentOpacity;
+                    done = false;
+                }
+                if (xOffset > 0)
+                {
+                    xOffset = Math.Max(0, xOffset - 4);
+                    this.Location = new Point(targetLocation.X + xOffset, targetLocation.Y);
+                    done = false;
+                }
+                if (done) animTimer.Stop();
+            }
+            else
+            {
+                // FADE OUT + SLIDE BACK RIGHT
+                bool done = true;
+                if (currentOpacity > 0.0)
+                {
+                    currentOpacity = Math.Max(0.0, currentOpacity - 0.08);
+                    this.Opacity = currentOpacity;
+                    done = false;
+                }
+                if (xOffset < 36)
+                {
+                    xOffset = Math.Min(36, xOffset + 4);
+                    this.Location = new Point(targetLocation.X + xOffset, targetLocation.Y);
+                    done = false;
+                }
+                if (done)
+                {
+                    animTimer.Stop();
+                    animTimer.Dispose();
+                    animTimer = null;
+                    if (pollTimer != null) { pollTimer.Stop(); pollTimer.Dispose(); pollTimer = null; }
+                    if (expandAnimTimer != null) { expandAnimTimer.Stop(); expandAnimTimer.Dispose(); expandAnimTimer = null; }
+                    this.Close();
+                    this.Dispose();
+                    // Return to the flyout only when settings was explicitly
+                    // closed via Save. Outside-click dismissal = stay closed.
+                    if (returnToFlyout && closeWasSave)
+                    {
+                        context.ReopenFlyoutAt(flyoutReturnPos);
+                    }
+                }
+            }
+        }
+
+        // Compact themed list popup for device selection
+        private class PickerPopup : Form
+        {
+            public int SelectedIndex = -1;
+            private int hoveredIndex = -1;
+            private List<string> items;
+
+            [DllImport("dwmapi.dll")]
+            private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+            public PickerPopup(List<string> itemNames, int selectedIndex)
+            {
+                items = itemNames; SelectedIndex = selectedIndex;
+
+                this.FormBorderStyle = FormBorderStyle.None;
+                this.ShowInTaskbar = false;
+                this.TopMost = true;
+                this.StartPosition = FormStartPosition.Manual;
+                this.BackColor = Color.FromArgb(28, 28, 28);
+                this.Width = 230; // fits inside the settings window width
+                // taller rows so text never clips: Segoe UI 9f needs ~24px
+                this.Height = items.Count * 26 + 12;
+
+                try
+                {
+                    int attribute = 33;
+                    int preference = 2;
+                    DwmSetWindowAttribute(this.Handle, attribute, ref preference, sizeof(int));
+                }
+                catch { }
+
+                this.Paint += (s, e) =>
+                {
+                    Graphics g = e.Graphics;
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    using (Pen p = new Pen(Color.FromArgb(55, 55, 58), 1))
+                        g.DrawRectangle(p, 0, 0, this.Width - 1, this.Height - 1);
+
+                    for (int i = 0; i < items.Count; i++)
+                    {
+                        int ry = 4 + i * 26;
+                        bool hov = i == hoveredIndex;
+                        if (hov)
+                        {
+                            using (System.Drawing.Drawing2D.GraphicsPath gp = RoundedPath(new Rectangle(4, ry - 1, this.Width - 8, 24), 5))
+                            using (Brush b = new SolidBrush(Color.FromArgb(38, 38, 38)))
+                                g.FillPath(b, gp);
+                        }
+                        bool selected = i == SelectedIndex;
+                        // truncate long names so they never overflow
+                        string label = items[i];
+                        using (Font f = new Font("Segoe UI", 9f))
+                        {
+                            SizeF ts = g.MeasureString(label, f);
+                            while (ts.Width > this.Width - 52 && label.Length > 4)
+                            {
+                                label = label.Substring(0, label.Length - 2);
+                                ts = g.MeasureString(label + "\u2026", f);
+                            }
+                            if (label != items[i]) label = label + "\u2026";
+
+                            using (Brush tb = new SolidBrush(selected ? Color.FromArgb(0, 150, 240) : Color.FromArgb(210, 210, 215)))
+                                g.DrawString(label, selected ? new Font("Segoe UI", 9f, FontStyle.Bold) : f, tb, new RectangleF(14, ry + 2, this.Width - 44, 22));
+                        }
+                        if (selected)
+                        {
+                            using (Font f = new Font("Segoe MDL2 Assets", 9f))
+                            using (Brush tb = new SolidBrush(Color.FromArgb(0, 150, 240)))
+                                g.DrawString("\uE73E", f, tb, this.Width - 26, ry + 3);
+                        }
+                    }
+                };
+                this.MouseMove += (s, e) =>
+                {
+                    int idx = (e.Y - 4) / 26;
+                    if (idx >= 0 && idx < items.Count && idx != hoveredIndex) { hoveredIndex = idx; this.Invalidate(); }
+                };
+                this.MouseLeave += (s, e) => { if (hoveredIndex != -1) { hoveredIndex = -1; this.Invalidate(); } };
+                this.MouseClick += (s, e) =>
+                {
+                    int idx = (e.Y - 4) / 26;
+                    if (idx >= 0 && idx < items.Count)
+                    {
+                        choseItem = true;
+                        SelectedIndex = idx;
+                        DialogResult = DialogResult.OK;
+                        Close();
+                    }
+                };
+            }
+
+            private bool choseItem = false;
+
+            // Classic combobox-dropdown trick: grab mouse capture when shown.
+            // Any click OUTSIDE our bounds makes Windows release our capture,
+            // which we treat as "dismissed without selecting".
+            protected override void OnShown(EventArgs e)
+            {
+                base.OnShown(e);
+                Capture = true;
+            }
+
+            protected override void OnMouseCaptureChanged(EventArgs e)
+            {
+                base.OnMouseCaptureChanged(e);
+                // Capture lost without a choice made = clicked outside
+                if (!choseItem && Visible && !IsDisposed && !Disposing)
+                {
+                    SelectedIndex = -1;
+                    DialogResult = DialogResult.Cancel;
+                    Close();
+                }
+            }
+
+            protected override void OnFormClosed(FormClosedEventArgs e)
+            {
+                Capture = false;
+                base.OnFormClosed(e);
+            }
+
+            private static System.Drawing.Drawing2D.GraphicsPath RoundedPath(Rectangle r, int radius)
+            {
+                System.Drawing.Drawing2D.GraphicsPath gp = new System.Drawing.Drawing2D.GraphicsPath();
+                int d = radius * 2;
+                gp.AddArc(r.X, r.Y, d, d, 180, 90);
+                gp.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+                gp.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+                gp.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+                gp.CloseFigure();
+                return gp;
+            }
+
+            [DllImport("user32.dll")]
+            private static extern IntPtr GetForegroundWindow();
+        }
+    }
+
     public class FlyoutForm : Form
     {
         private BatteryMonitorContext context;
@@ -1853,7 +2555,7 @@ namespace BatteryMonitorApp
             // Enable double buffering to prevent flickering during hover transitions
             this.DoubleBuffered = true;
 
-            this.Text = "BattStat v1.2.3";
+            this.Text = "BattStat v1.3.0";
             int activeCount = (context.outerConfig.Protocol != "None" ? 1 : 0) + (context.middleConfig.Protocol != "None" ? 1 : 0) + (context.innerConfig.Protocol != "None" ? 1 : 0);
             int formHeight = 440 - ((3 - activeCount) * 45);
             this.Size = new Size(260, formHeight);
@@ -2119,8 +2821,8 @@ namespace BatteryMonitorApp
                 g.DrawRectangle(borderPen, 0, 0, this.Width - 1, this.Height - 1);
             }
 
-            // --- HEADER ---
-            using (Font fontTitle = new Font("Segoe UI", 10f, FontStyle.Regular))
+            // --- HEADER --- (font scale unified with the settings window)
+            using (Font fontTitle = new Font("Segoe UI", 11f, FontStyle.Bold))
             using (Font fontVersion = new Font("Segoe UI", 8.5f, FontStyle.Regular))
             using (Brush titleBrush = new SolidBrush(Color.FromArgb(170, 170, 170)))
             {
@@ -2262,7 +2964,7 @@ namespace BatteryMonitorApp
 
         private void DrawDeviceRow(Graphics g, int yStart, string label, bool connected, int battery, Color themeColor, bool wired, float hoverFactor, float highlightFactor)
         {
-            using (Font fontLabel = new Font("Segoe UI", 9.5f, FontStyle.Regular))
+            using (Font fontLabel = new Font("Segoe UI", 9f, FontStyle.Regular))
             using (Font fontStatus = new Font("Segoe UI", 9f, FontStyle.Regular))
             {
             int yCenter = yStart + 22;

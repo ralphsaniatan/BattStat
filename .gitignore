@@ -1,20 +1,25 @@
-# Compiled binary
-BattStat.exe
-BatteryMonitor.exe
-
-# Local user configuration
-config.txt
-
-# Windows shortcut links
-BattStat.lnk
-ArctisBatteryMonitor.lnk
-*.lnk
 
 # Backup folder
-backup-scripts/
-
+# Compiled binary
 # Editor files
-.vs/
+# Local user configuration
+# Windows shortcut links
+*.lnk
+*.log
 *.suo
 *.user
-*.log
+.vs/
+ArctisBatteryMonitor.lnk
+backup-scripts/
+BatteryMonitor.exe
+BattStat.exe
+BattStat.lnk
+battstat_debug.log
+BattStat_v125.exe
+config.txt
+config.txt
+config_v13_backup.txt
+DrawTest.cs
+DrawTest.exe
+TrayTest.cs
+TrayTest.exe
